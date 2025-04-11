@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>LinBot UI</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            height: 100vh;
+            box-sizing: border-box;
+            display: flex;
+            justify-content: center;
+        }
+        
+        .layout-container {
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            width: 1200px; /* 固定总宽度 */
+            box-shadow: 0 0 15px rgba(0,0,0,0.1);
+        }
+        
+        /* 左侧导航栏 */
+        .nav-sidebar {
+            width: 200px;
+            min-width: 200px; /* 确保最小宽度 */
+            background-color: #2c3e50;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+        
+        .nav-header {
+            padding: 20px 15px;
+            text-align: center;
+            font-size: 20px;
+            font-weight: bold;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .nav-links {
+            flex-grow: 1;
+        }
+        
+        .nav-item {
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+            border-left: 4px solid transparent;
+        }
+        
+        .nav-item:hover {
+            background-color: rgba(255,255,255,0.1);
+        }
+        
+        .nav-item.active {
+            background-color: rgba(255,255,255,0.2);
+            border-left: 4px solid #3498db;
+        }
+        
+        /* 右侧内容区 */
+        .content-wrapper {
+            flex-grow: 1;
+            width: 1000px; /* 固定宽度 = 总宽度1200px - 导航栏宽度200px */
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background-color: white;
+        }
+        
+        .page-container {
+            flex-grow: 1;
+            overflow: auto;
+            padding: 20px;
+            display: none;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        
+        .page-container.active {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* 服务器控制面板 */
+        .config-panel {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .form-group {
+            margin-bottom: 0;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        label {
+            font-weight: bold;
+            white-space: nowrap;
+        }
+        
+        input[type="number"], input[type="text"] {
+            width: auto;
+            min-width: 100px;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        
+        input[type="number"] {
+            width: 80px;
+        }
+        
+        button {
+            background-color: #3498db;
+            color: white;
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        
+        button:hover {
+            background-color: #2980b9;
+        }
+        
+        button.stop {
+            background-color: #e74c3c;
+        }
+        
+        button.stop:hover {
+            background-color: #c0392b;
+        }
+        
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        
+        button.stop:disabled {
+            background-color: #f8d7da;
+            color: #721c24;
+            border-color: transparent;
+            cursor: not-allowed;
+        }
+        
+        /* 状态栏 */
+        .status-bar {
+            margin-bottom: 15px;
+            padding: 15px;
+            border-radius: 4px;
+            font-weight: bold;
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            width: 100%;
+            box-sizing: border-box;
+        }
+        
+        .running {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        
+        .stopped {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        
+        .client-connected {
+            margin-left: 10px;
+            font-weight: normal;
+            color: #155724;
+        }
+        
+        .client-disconnected {
+            margin-left: 10px;
+            font-weight: normal;
+            color: #721c24;
+        }
+        
+        /* 日志区域 */
+        .log-container {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 15px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            width: 100%;
+            box-sizing: border-box;
+            height: calc(100vh - 220px); /* 固定高度，减去上面元素的高度 */
+            min-height: 300px; /* 最小高度 */
+        }
+        
+        .log-entry {
+            margin: 3px 0;
+            font-family: monospace;
+            word-break: break-all;
+        }
+        
+        .log-time {
+            color: #888;
+            margin-right: 5px;
+        }
+        
+        .log-type-event { color: blue; }
+        .log-type-api { color: green; }
+        .log-type-meta { color: purple; }
+        .log-type-notice { color: orange; }
+        .log-type-request { color: brown; }
+        .log-type-error { color: red; }
+        
+        /* 群组管理样式 */
+        .page-title {
+            margin-top: 0;
+            margin-bottom: 20px;
+            color: #2c3e50;
+            width: 100%;
+        }
+        
+        .group-manager-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background-color: white;
+            border-radius: 8px 8px 0 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            width: 100%;
+            box-sizing: border-box;
+        }
+        
+        .group-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap; /* 允许在小宽度下换行 */
+        }
+        
+        .group-list-container {
+            flex-grow: 1;
+            background-color: white;
+            border-radius: 0 0 8px 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        
+        .group-list {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed; /* 使用固定表格布局 */
+        }
+        
+        .group-list th, .group-list td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .group-list th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+        }
+        
+        .group-list tr:hover {
+            background-color: #f9f9f9;
+        }
+        
+        /* 设置各列宽度 */
+        .group-list th:nth-child(1), .group-list td:nth-child(1) { width: 20%; } /* 群号 */
+        .group-list th:nth-child(2), .group-list td:nth-child(2) { width: 40%; } /* 群名称 */
+        .group-list th:nth-child(3), .group-list td:nth-child(3) { width: 15%; } /* 状态 */
+        .group-list th:nth-child(4), .group-list td:nth-child(4) { width: 25%; } /* 操作 */
+        
+        .group-status {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        
+        .status-enabled {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        
+        .status-disabled {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        
+        .action-btn {
+            margin-right: 5px;
+        }
+        
+        .edit-btn {
+            background-color: #17a2b8;
+        }
+        
+        .edit-btn:hover {
+            background-color: #138496;
+        }
+        
+        .toggle-btn {
+            background-color: #28a745;
+        }
+        
+        .toggle-btn:hover {
+            background-color: #218838;
+        }
+        
+        .toggle-btn.disabled {
+            background-color: #dc3545;
+        }
+        
+        .toggle-btn.disabled:hover {
+            background-color: #c82333;
+        }
+        
+        /* 媒体查询 - 适应不同屏幕尺寸 */
+        @media (max-width: 1220px) {
+            .layout-container {
+                width: 100%;
+                height: 100vh;
+            }
+            
+            .content-wrapper {
+                width: calc(100% - 200px);
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .layout-container {
+                flex-direction: column;
+                height: auto;
+                min-height: 100vh;
+            }
+            
+            .nav-sidebar {
+                width: 100%;
+                min-height: 50px;
+                flex-direction: row;
+                align-items: center;
+            }
+            
+            .nav-header {
+                border-bottom: none;
+                border-right: 1px solid rgba(255,255,255,0.1);
+                padding: 10px 15px;
+            }
+            
+            .nav-links {
+                display: flex;
+                padding: 0 10px;
+            }
+            
+            .nav-item {
+                padding: 15px 10px;
+                border-left: none;
+                border-bottom: 3px solid transparent;
+            }
+            
+            .nav-item.active {
+                border-left: none;
+                border-bottom: 3px solid #3498db;
+            }
+            
+            .content-wrapper {
+                width: 100%;
+                min-height: calc(100vh - 50px);
+            }
+            
+            .log-container {
+                height: calc(100vh - 250px);
+            }
+            
+            .group-actions {
+                flex-direction: column;
+                width: 100%;
+            }
+            
+            .group-actions input, 
+            .group-actions button {
+                width: 100%;
+                margin-bottom: 5px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="layout-container">
+        <!-- 左侧导航栏 -->
+        <div class="nav-sidebar">
+            <div class="nav-header">LinBot UI</div>
+            <div class="nav-links">
+                <div class="nav-item active" data-page="server-page">服务器控制</div>
+                <div class="nav-item" data-page="log-page">服务器日志</div>
+                <div class="nav-item" data-page="event-page">事件日志</div>
+                <div class="nav-item" data-page="group-page">群聊管理</div>
+            </div>
+        </div>
+        
+        <!-- 右侧内容区 -->
+        <div class="content-wrapper">
+            <!-- 服务器控制页面 -->
+            <div id="server-page" class="page-container active">
+                <h2 class="page-title">服务器控制</h2>
+                
+                <div class="config-panel">
+                    <div class="form-group">
+                        <label for="listenPort">监听端口:</label>
+                        <input type="number" id="listenPort" placeholder="例如 8080" value="8080">
+                    </div>
+                    <div class="form-group">
+                        <label for="accessToken">Access Token (可选):</label>
+                        <input type="text" id="accessToken" placeholder="留空则不验证">
+                    </div>
+                    <div class="form-group">
+                        <input type="checkbox" id="showHeartbeat" checked>
+                        <label for="showHeartbeat">显示心跳消息</label>
+                    </div>
+                    <button id="startBtn">启动服务</button>
+                    <button id="stopBtn" class="stop" disabled>停止服务</button>
+                </div>
+                
+                <div id="status-bar" class="status-bar stopped">
+                    服务未运行
+                    <span id="client-status"></span>
+                </div>
+                
+                <div id="server-log-container" class="log-container"></div>
+            </div>
+            
+            <!-- 服务器日志页面 -->
+            <div id="log-page" class="page-container">
+                <h2 class="page-title">服务器日志</h2>
+                <div id="server-log-display" class="log-container"></div>
+            </div>
+            
+            <!-- 事件日志页面 -->
+            <div id="event-page" class="page-container">
+                <h2 class="page-title">事件日志</h2>
+                <div id="event-log-container" class="log-container"></div>
+            </div>
+            
+            <!-- 群聊管理页面 -->
+            <div id="group-page" class="page-container">
+                <h2 class="page-title">群聊管理</h2>
+                
+                <div class="group-manager-header">
+                    <div class="group-actions">
+                        <input type="text" id="groupIdInput" placeholder="输入群号">
+                        <button id="addGroupBtn">添加群聊</button>
+                        <button id="refreshGroupsBtn">刷新列表</button>
+                        <button id="getGroupListBtn">获取群聊列表</button>
+                    </div>
+                </div>
+                
+                <div class="group-list-container">
+                    <table class="group-list">
+                        <thead>
+                            <tr>
+                                <th>群号</th>
+                                <th>群名称</th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="groupTableBody">
+                            <!-- 群列表将由JS动态生成 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 导航切换逻辑
+        document.addEventListener('DOMContentLoaded', () => {
+            const navItems = document.querySelectorAll('.nav-item');
+            const pages = document.querySelectorAll('.page-container');
+            
+            navItems.forEach(item => {
+                item.addEventListener('click', () => {
+                    const targetPage = item.getAttribute('data-page');
+                    
+                    // 激活导航项
+                    navItems.forEach(nav => nav.classList.remove('active'));
+                    item.classList.add('active');
+                    
+                    // 显示对应页面
+                    pages.forEach(page => {
+                        if (page.id === targetPage) {
+                            page.classList.add('active');
+                        } else {
+                            page.classList.remove('active');
+                        }
+                    });
+                });
+            });
+        });
+    </script>
+    <script src="renderer.js"></script>
+</body>
+</html> 
