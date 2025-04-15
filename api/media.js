@@ -1,5 +1,7 @@
 /**
- * 多媒体和文件相关API封装
+ * 多媒体相关API封装
+ * 基于OneBot v11标准实现
+ * 参考：https://github.com/botuniverse/onebot-11/blob/master/api/public.md
  */
 class MediaApi {
     constructor(client) {
@@ -7,54 +9,143 @@ class MediaApi {
     }
 
     /**
-     * 获取图片
-     * @param {string} file 图片缓存文件名
-     * @returns {Promise<object>} 返回结果
+     * 获取图片信息
+     * @param {string} file 图片缓存文件名或URL
+     * @returns {Promise<object>} 图片信息
      */
     async getImage(file) {
-        return await this.client.callApi('get_image', {
-            file
-        });
+        try {
+            console.log('[MediaApi] 获取图片信息', file);
+            const response = await this.client.callApi('get_image', { file });
+            return response;
+        } catch (error) {
+            console.error('[MediaApi] 获取图片信息失败', error);
+            throw error;
+        }
     }
 
     /**
      * 获取语音
-     * @param {string} file 语音文件名
-     * @param {string} out_format 输出格式，默认原格式，可选 mp3、amr、wma、m4a、spx、ogg、wav、flac
-     * @returns {Promise<object>} 返回结果
+     * @param {string} file 语音文件名或URL
+     * @param {string} out_format 输出格式，可选 mp3、amr、wma、m4a、spx、ogg、wav、flac
+     * @returns {Promise<object>} 语音文件信息
      */
-    async getRecord(file, out_format = '') {
-        return await this.client.callApi('get_record', {
-            file,
-            out_format
-        });
+    async getRecord(file, out_format = 'mp3') {
+        try {
+            console.log('[MediaApi] 获取语音', file, out_format);
+            const response = await this.client.callApi('get_record', {
+                file,
+                out_format
+            });
+            return response;
+        } catch (error) {
+            console.error('[MediaApi] 获取语音失败', error);
+            throw error;
+        }
     }
 
     /**
      * 检查是否可以发送图片
-     * @returns {Promise<object>} 返回结果
+     * @returns {Promise<boolean>} 是否可以发送图片
      */
     async canSendImage() {
-        return await this.client.callApi('can_send_image');
+        try {
+            console.log('[MediaApi] 检查是否可以发送图片');
+            const response = await this.client.callApi('can_send_image');
+            return response?.data?.yes === true;
+        } catch (error) {
+            console.error('[MediaApi] 检查发送图片能力失败', error);
+            return false;
+        }
     }
 
     /**
      * 检查是否可以发送语音
-     * @returns {Promise<object>} 返回结果
+     * @returns {Promise<boolean>} 是否可以发送语音
      */
     async canSendRecord() {
-        return await this.client.callApi('can_send_record');
+        try {
+            console.log('[MediaApi] 检查是否可以发送语音');
+            const response = await this.client.callApi('can_send_record');
+            return response?.data?.yes === true;
+        } catch (error) {
+            console.error('[MediaApi] 检查发送语音能力失败', error);
+            return false;
+        }
     }
 
     /**
-     * 获取文件信息
-     * @param {string} file 文件缓存名
-     * @returns {Promise<object>} 返回结果
+     * 获取群文件系统信息
+     * @param {number|string} group_id 群号
+     * @returns {Promise<object>} 文件系统信息
      */
-    async getFile(file) {
-        return await this.client.callApi('get_file', {
-            file
-        });
+    async getGroupFileSystemInfo(group_id) {
+        try {
+            console.log('[MediaApi] 获取群文件系统信息', group_id);
+            return await this.client.callApi('get_group_file_system_info', {
+                group_id: Number(group_id) || group_id
+            });
+        } catch (error) {
+            console.error('[MediaApi] 获取群文件系统信息失败', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 获取群根目录文件列表
+     * @param {number|string} group_id 群号
+     * @returns {Promise<object>} 文件列表
+     */
+    async getGroupRootFiles(group_id) {
+        try {
+            console.log('[MediaApi] 获取群根目录文件列表', group_id);
+            return await this.client.callApi('get_group_root_files', {
+                group_id: Number(group_id) || group_id
+            });
+        } catch (error) {
+            console.error('[MediaApi] 获取群根目录文件列表失败', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 获取群子目录文件列表
+     * @param {number|string} group_id 群号
+     * @param {string} folder_id 文件夹ID
+     * @returns {Promise<object>} 文件列表
+     */
+    async getGroupFilesByFolder(group_id, folder_id) {
+        try {
+            console.log('[MediaApi] 获取群子目录文件列表', group_id, folder_id);
+            return await this.client.callApi('get_group_files_by_folder', {
+                group_id: Number(group_id) || group_id,
+                folder_id
+            });
+        } catch (error) {
+            console.error('[MediaApi] 获取群子目录文件列表失败', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 获取群文件资源链接
+     * @param {number|string} group_id 群号
+     * @param {string} file_id 文件ID
+     * @param {number} busid 文件类型
+     * @returns {Promise<object>} 文件资源链接
+     */
+    async getGroupFileUrl(group_id, file_id, busid) {
+        try {
+            console.log('[MediaApi] 获取群文件资源链接', group_id, file_id);
+            return await this.client.callApi('get_group_file_url', {
+                group_id: Number(group_id) || group_id,
+                file_id,
+                busid: Number(busid) || 0
+            });
+        } catch (error) {
+            console.error('[MediaApi] 获取群文件资源链接失败', error);
+            throw error;
+        }
     }
 
     /**
@@ -63,219 +154,171 @@ class MediaApi {
      * @param {string} file 本地文件路径
      * @param {string} name 储存名称
      * @param {string} folder 父目录ID
-     * @returns {Promise<object>} 返回结果
+     * @returns {Promise<object>} 上传结果
      */
     async uploadGroupFile(group_id, file, name, folder = '') {
-        return await this.client.callApi('upload_group_file', {
-            group_id,
-            file,
-            name,
-            folder
-        });
+        try {
+            console.log('[MediaApi] 上传群文件', group_id, file, name);
+            return await this.client.callApi('upload_group_file', {
+                group_id: Number(group_id) || group_id,
+                file,
+                name,
+                folder
+            });
+        } catch (error) {
+            console.error('[MediaApi] 上传群文件失败', error);
+            throw error;
+        }
     }
 
     /**
-     * 删除群文件
+     * 获取合并转发内容
+     * @param {string} id 合并转发ID
+     * @returns {Promise<object>} 合并转发内容
+     */
+    async getForwardMsg(id) {
+        try {
+            console.log('[MediaApi] 获取合并转发内容', id);
+            return await this.client.callApi('get_forward_msg', { id });
+        } catch (error) {
+            console.error('[MediaApi] 获取合并转发内容失败', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 发送合并转发(群)
      * @param {number|string} group_id 群号
-     * @param {string} file_id 文件ID
-     * @param {string} busid 文件类型
-     * @returns {Promise<object>} 返回结果
+     * @param {Array} messages 消息节点列表
+     * @returns {Promise<object>} 发送结果
      */
-    async deleteGroupFile(group_id, file_id, busid) {
-        return await this.client.callApi('delete_group_file', {
-            group_id,
-            file_id,
-            busid
+    async sendGroupForwardMsg(group_id, messages) {
+        try {
+            console.log('[MediaApi] 发送群合并转发', group_id);
+            
+            // 确保消息是node格式
+            const formattedMessages = this.formatForwardMessages(messages);
+            
+            return await this.client.callApi('send_group_forward_msg', {
+                group_id: Number(group_id) || group_id,
+                messages: formattedMessages
+            });
+        } catch (error) {
+            console.error('[MediaApi] 发送群合并转发失败', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 发送合并转发(私聊)
+     * @param {number|string} user_id 用户QQ号
+     * @param {Array} messages 消息节点列表
+     * @returns {Promise<object>} 发送结果
+     */
+    async sendPrivateForwardMsg(user_id, messages) {
+        try {
+            console.log('[MediaApi] 发送私聊合并转发', user_id);
+            
+            // 确保消息是node格式
+            const formattedMessages = this.formatForwardMessages(messages);
+            
+            return await this.client.callApi('send_private_forward_msg', {
+                user_id: Number(user_id) || user_id,
+                messages: formattedMessages
+            });
+        } catch (error) {
+            console.error('[MediaApi] 发送私聊合并转发失败', error);
+            throw error;
+        }
+    }
+    
+    /**
+     * 格式化合并转发消息
+     * @private
+     * @param {Array} messages 消息列表
+     * @returns {Array} 格式化后的消息列表
+     */
+    formatForwardMessages(messages) {
+        if (!Array.isArray(messages)) {
+            throw new Error('消息列表必须是数组');
+        }
+        
+        return messages.map(msg => {
+            // 如果已经是node格式，直接返回
+            if (msg.type === 'node') {
+                return msg;
+            }
+            
+            // 尝试构建node格式
+            const nodeData = {};
+            
+            if (msg.user_id) nodeData.uin = String(msg.user_id);
+            if (msg.nickname || msg.name) nodeData.name = msg.nickname || msg.name || '匿名';
+            
+            // 处理消息内容
+            if (msg.content) {
+                nodeData.content = msg.content;
+            } else if (msg.message) {
+                nodeData.content = msg.message;
+            } else {
+                nodeData.content = '空消息';
+            }
+            
+            return {
+                type: 'node',
+                data: nodeData
+            };
         });
     }
-
+    
     /**
-     * 创建群文件文件夹
-     * @param {number|string} group_id 群号
-     * @param {string} name 文件夹名称
-     * @param {string} parent_id 父目录ID
-     * @returns {Promise<object>} 返回结果
+     * 创建语音消息段
+     * @param {string} file 语音文件路径或URL
+     * @param {boolean} cache 是否使用缓存
+     * @returns {object} 语音消息段
      */
-    async createGroupFileFolder(group_id, name, parent_id = '') {
-        return await this.client.callApi('create_group_file_folder', {
-            group_id,
-            name,
-            parent_id
-        });
+    recordSegment(file, cache = true) {
+        return {
+            type: 'record',
+            data: {
+                file,
+                cache: cache ? 1 : 0
+            }
+        };
     }
-
+    
     /**
-     * 删除群文件文件夹
-     * @param {number|string} group_id 群号
-     * @param {string} folder_id 文件夹ID
-     * @returns {Promise<object>} 返回结果
+     * 创建图片消息段
+     * @param {string} file 图片文件路径或URL
+     * @param {boolean} cache 是否使用缓存
+     * @param {boolean} proxy 是否通过代理下载图片
+     * @returns {object} 图片消息段
      */
-    async deleteGroupFolder(group_id, folder_id) {
-        return await this.client.callApi('delete_group_folder', {
-            group_id,
-            folder_id
-        });
+    imageSegment(file, cache = true, proxy = true) {
+        return {
+            type: 'image',
+            data: {
+                file,
+                cache: cache ? 1 : 0,
+                proxy: proxy ? 1 : 0
+            }
+        };
     }
-
+    
     /**
-     * 获取群文件系统信息
-     * @param {number|string} group_id 群号
-     * @returns {Promise<object>} 返回结果
+     * 创建视频消息段
+     * @param {string} file 视频文件路径或URL
+     * @param {string} cover 视频封面
+     * @returns {object} 视频消息段
      */
-    async getGroupFileSystemInfo(group_id) {
-        return await this.client.callApi('get_group_file_system_info', {
-            group_id
-        });
-    }
-
-    /**
-     * 获取群根目录文件列表
-     * @param {number|string} group_id 群号
-     * @returns {Promise<object>} 返回结果
-     */
-    async getGroupRootFiles(group_id) {
-        return await this.client.callApi('get_group_root_files', {
-            group_id
-        });
-    }
-
-    /**
-     * 获取群子目录文件列表
-     * @param {number|string} group_id 群号
-     * @param {string} folder_id 文件夹ID
-     * @returns {Promise<object>} 返回结果
-     */
-    async getGroupFilesByFolder(group_id, folder_id) {
-        return await this.client.callApi('get_group_files_by_folder', {
-            group_id,
-            folder_id
-        });
-    }
-
-    /**
-     * 获取群文件资源链接
-     * @param {number|string} group_id 群号
-     * @param {string} file_id 文件ID
-     * @param {string} busid 文件类型
-     * @returns {Promise<object>} 返回结果
-     */
-    async getGroupFileUrl(group_id, file_id, busid) {
-        return await this.client.callApi('get_group_file_url', {
-            group_id,
-            file_id,
-            busid
-        });
-    }
-
-    /**
-     * 上传私聊文件
-     * @param {number|string} user_id QQ号
-     * @param {string} file 本地文件路径
-     * @param {string} name 文件名称
-     * @returns {Promise<object>} 返回结果
-     */
-    async uploadPrivateFile(user_id, file, name) {
-        return await this.client.callApi('upload_private_file', {
-            user_id,
-            file,
-            name
-        });
-    }
-
-    /**
-     * 下载文件到缓存目录
-     * @param {string} url 链接地址
-     * @param {number} thread_count 下载线程数
-     * @param {object} headers 请求头
-     * @returns {Promise<object>} 返回结果
-     */
-    async downloadFile(url, thread_count = 1, headers = {}) {
-        return await this.client.callApi('download_file', {
-            url,
-            thread_count,
-            headers
-        });
-    }
-
-    /**
-     * 检查链接安全性
-     * @param {string} url 需要检查的链接
-     * @returns {Promise<object>} 返回结果
-     */
-    async checkUrlSafely(url) {
-        return await this.client.callApi('check_url_safely', {
-            url
-        });
-    }
-
-    /**
-     * 获取收藏表情
-     * @returns {Promise<object>} 返回结果
-     */
-    async fetchCustomFace() {
-        return await this.client.callApi('fetch_custom_face');
-    }
-
-    /**
-     * AI文字转语音
-     * @param {string} text 要转换的文本
-     * @param {number} speaker 语音角色ID
-     * @returns {Promise<object>} 返回结果
-     */
-    async getAiRecord(text, speaker = 0) {
-        return await this.client.callApi('get_ai_record', {
-            text,
-            speaker
-        });
-    }
-
-    /**
-     * 获取AI语音角色列表
-     * @returns {Promise<object>} 返回结果
-     */
-    async getAiCharacters() {
-        return await this.client.callApi('get_ai_characters');
-    }
-
-    /**
-     * 群聊发送AI语音
-     * @param {number|string} group_id 群号
-     * @param {string} text 要转换的文本
-     * @param {number} speaker 语音角色ID
-     * @returns {Promise<object>} 返回结果
-     */
-    async sendGroupAiRecord(group_id, text, speaker = 0) {
-        return await this.client.callApi('send_group_ai_record', {
-            group_id,
-            text,
-            speaker
-        });
-    }
-
-    /**
-     * 图片OCR
-     * @param {string} image 图片ID
-     * @returns {Promise<object>} 返回结果
-     */
-    async ocrImage(image) {
-        return await this.client.callApi('ocr_image', {
-            image
-        });
-    }
-
-    /**
-     * 获取小程序卡片内容
-     * @param {string} app_id 小程序ID
-     * @param {string} view 视图类型
-     * @param {object} params 小程序参数
-     * @returns {Promise<object>} 返回结果
-     */
-    async getMiniAppArk(app_id, view, params = {}) {
-        return await this.client.callApi('get_mini_app_ark', {
-            app_id,
-            view,
-            params
-        });
+    videoSegment(file, cover = '') {
+        return {
+            type: 'video',
+            data: {
+                file,
+                cover
+            }
+        };
     }
 }
 

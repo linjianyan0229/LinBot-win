@@ -1,5 +1,7 @@
 /**
  * 好友相关API封装
+ * 基于OneBot v11标准实现
+ * 参考：https://github.com/botuniverse/onebot-11/blob/master/api/public.md
  */
 class FriendApi {
     constructor(client) {
@@ -8,150 +10,201 @@ class FriendApi {
 
     /**
      * 获取好友列表
-     * @returns {Promise<object>} 返回结果
+     * @returns {Promise<object>} 好友列表
      */
     async getFriendList() {
-        return await this.client.callApi('get_friend_list');
+        try {
+            console.log('[FriendApi] 获取好友列表');
+            return await this.client.callApi('get_friend_list');
+        } catch (error) {
+            console.error('[FriendApi] 获取好友列表失败', error);
+            throw error;
+        }
     }
 
     /**
-     * 获取好友分类列表
-     * @returns {Promise<object>} 返回结果
+     * 获取单向好友列表
+     * @returns {Promise<object>} 单向好友列表
      */
-    async getFriendsWithCategory() {
-        return await this.client.callApi('get_friends_with_category');
+    async getUnidirectionalFriendList() {
+        try {
+            console.log('[FriendApi] 获取单向好友列表');
+            return await this.client.callApi('get_unidirectional_friend_list');
+        } catch (error) {
+            console.error('[FriendApi] 获取单向好友列表失败', error);
+            throw error;
+        }
     }
 
     /**
      * 获取陌生人信息
      * @param {number|string} user_id QQ 号
      * @param {boolean} no_cache 是否不使用缓存
-     * @returns {Promise<object>} 返回结果
+     * @returns {Promise<object>} 陌生人信息
      */
     async getStrangerInfo(user_id, no_cache = false) {
-        return await this.client.callApi('get_stranger_info', {
-            user_id,
-            no_cache
-        });
+        try {
+            console.log(`[FriendApi] 获取陌生人${user_id}信息`);
+            return await this.client.callApi('get_stranger_info', {
+                user_id: Number(user_id) || user_id,
+                no_cache
+            });
+        } catch (error) {
+            console.error('[FriendApi] 获取陌生人信息失败', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 获取好友资料
+     * @param {number|string} user_id QQ 号
+     * @returns {Promise<object>} 好友资料
+     */
+    async getFriendInfo(user_id) {
+        try {
+            console.log(`[FriendApi] 获取好友${user_id}资料`);
+            return await this.client.callApi('_get_friend_info', {
+                user_id: Number(user_id) || user_id
+            });
+        } catch (error) {
+            console.error('[FriendApi] 获取好友资料失败', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 删除好友
+     * @param {number|string} user_id QQ 号
+     * @returns {Promise<object>} 操作结果
+     */
+    async deleteFriend(user_id) {
+        try {
+            console.log(`[FriendApi] 删除好友${user_id}`);
+            return await this.client.callApi('delete_friend', {
+                user_id: Number(user_id) || user_id
+            });
+        } catch (error) {
+            console.error('[FriendApi] 删除好友失败', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 删除单向好友
+     * @param {number|string} user_id QQ 号
+     * @returns {Promise<object>} 操作结果
+     */
+    async deleteUnidirectionalFriend(user_id) {
+        try {
+            console.log(`[FriendApi] 删除单向好友${user_id}`);
+            return await this.client.callApi('delete_unidirectional_friend', {
+                user_id: Number(user_id) || user_id
+            });
+        } catch (error) {
+            console.error('[FriendApi] 删除单向好友失败', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 处理好友请求
+     * @param {string} flag 加好友请求的 flag（需从上报的数据中获得）
+     * @param {boolean} approve 是否同意请求
+     * @param {string} remark 添加后的好友备注（仅在同意时有效）
+     * @returns {Promise<object>} 操作结果
+     */
+    async setFriendAddRequest(flag, approve = true, remark = '') {
+        try {
+            if (!flag) {
+                throw new Error('缺少请求标识flag');
+            }
+            
+            console.log(`[FriendApi] 处理好友请求，是否同意: ${approve}`);
+            return await this.client.callApi('set_friend_add_request', {
+                flag,
+                approve,
+                remark: approve ? remark : ''
+            });
+        } catch (error) {
+            console.error('[FriendApi] 处理好友请求失败', error);
+            throw error;
+        }
     }
 
     /**
      * 发送好友赞
      * @param {number|string} user_id QQ 号
      * @param {number} times 赞的次数
-     * @returns {Promise<object>} 返回结果
+     * @returns {Promise<object>} 操作结果
      */
     async sendLike(user_id, times = 1) {
-        return await this.client.callApi('send_like', {
-            user_id,
-            times
-        });
+        try {
+            // 每个好友每天最多 10 次
+            const actualTimes = Math.min(Math.max(1, Number(times) || 1), 10);
+            
+            console.log(`[FriendApi] 给好友${user_id}点赞${actualTimes}次`);
+            return await this.client.callApi('send_like', {
+                user_id: Number(user_id) || user_id,
+                times: actualTimes
+            });
+        } catch (error) {
+            console.error('[FriendApi] 发送好友赞失败', error);
+            throw error;
+        }
     }
 
     /**
-     * 删除好友
+     * 添加好友
      * @param {number|string} user_id QQ 号
-     * @returns {Promise<object>} 返回结果
+     * @param {string} comment 验证信息
+     * @param {string} source 来源，可选值 search添加后搜索的人， group添加群聊中的人， card添加名片中的人
+     * @returns {Promise<object>} 操作结果
      */
-    async deleteFriend(user_id) {
-        return await this.client.callApi('delete_friend', {
-            user_id
-        });
+    async addFriend(user_id, comment = '', source = 'search') {
+        try {
+            console.log(`[FriendApi] 添加好友${user_id}`);
+            return await this.client.callApi('add_friend', {
+                user_id: Number(user_id) || user_id,
+                comment,
+                source
+            });
+        } catch (error) {
+            console.error('[FriendApi] 添加好友失败', error);
+            throw error;
+        }
     }
 
     /**
-     * 处理加好友请求
-     * @param {string} flag 加好友请求的 flag（需从上报的数据中获得）
-     * @param {boolean} approve 是否同意请求
-     * @param {string} remark 添加后的好友备注（仅在同意时有效）
-     * @returns {Promise<object>} 返回结果
-     */
-    async setFriendAddRequest(flag, approve = true, remark = '') {
-        return await this.client.callApi('set_friend_add_request', {
-            flag,
-            approve,
-            remark
-        });
-    }
-
-    /**
-     * 获取陌生人在线状态
+     * 设置好友备注
      * @param {number|string} user_id QQ 号
-     * @returns {Promise<object>} 返回结果
+     * @param {string} remark 备注
+     * @returns {Promise<object>} 操作结果
      */
-    async getUserStatus(user_id) {
-        return await this.client.callApi('nc_get_user_status', {
-            user_id
-        });
+    async setFriendRemark(user_id, remark) {
+        try {
+            console.log(`[FriendApi] 设置好友${user_id}备注: ${remark}`);
+            return await this.client.callApi('set_friend_remark', {
+                user_id: Number(user_id) || user_id,
+                remark
+            });
+        } catch (error) {
+            console.error('[FriendApi] 设置好友备注失败', error);
+            throw error;
+        }
     }
 
     /**
-     * 私聊戳一戳
-     * @param {number|string} user_id QQ 号
-     * @returns {Promise<object>} 返回结果
+     * 获取好友系统消息
+     * @returns {Promise<object>} 好友系统消息
      */
-    async friendPoke(user_id) {
-        return await this.client.callApi('friend_poke', {
-            user_id
-        });
-    }
-
-    /**
-     * 推荐联系人/群聊
-     * @param {number|string} user_id QQ 号
-     * @param {number|string} recommend_id 被推荐的联系人/群QQ号
-     * @param {string} recommend_type 推荐类型，'contact'联系人，'group'群聊
-     * @param {string} reason 推荐理由
-     * @returns {Promise<object>} 返回结果
-     */
-    async arkSharePeer(user_id, recommend_id, recommend_type = 'contact', reason = '') {
-        return await this.client.callApi('ArkSharePeer', {
-            user_id,
-            recommend_id,
-            recommend_type,
-            reason
-        });
-    }
-
-    /**
-     * 推荐群聊
-     * @param {number|string} user_id QQ 号
-     * @param {number|string} group_id 推荐的群号
-     * @param {string} reason 推荐理由
-     * @returns {Promise<object>} 返回结果
-     */
-    async arkShareGroup(user_id, group_id, reason = '') {
-        return await this.client.callApi('ArkShareGroup', {
-            user_id,
-            group_id,
-            reason
-        });
-    }
-
-    /**
-     * 设置输入状态
-     * @param {number|string} user_id QQ 号
-     * @param {string} typing_state 输入状态，'typing'为正在输入，'cancel'为取消输入
-     * @returns {Promise<object>} 返回结果
-     */
-    async setInputStatus(user_id, typing_state = 'typing') {
-        return await this.client.callApi('set_input_status', {
-            user_id,
-            typing_state
-        });
-    }
-
-    /**
-     * 转发单条信息到私聊
-     * @param {number|string} user_id QQ 号
-     * @param {number|string} message_id 消息ID
-     * @returns {Promise<object>} 返回结果
-     */
-    async forwardFriendSingleMsg(user_id, message_id) {
-        return await this.client.callApi('forward_friend_single_msg', {
-            user_id,
-            message_id
-        });
+    async getFriendSystemMsg() {
+        try {
+            console.log('[FriendApi] 获取好友系统消息');
+            return await this.client.callApi('get_friend_system_msg');
+        } catch (error) {
+            console.error('[FriendApi] 获取好友系统消息失败', error);
+            throw error;
+        }
     }
 }
 

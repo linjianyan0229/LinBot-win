@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs'); // 引入 fs 模块
 const WebSocketServer = require('ws').Server; // 引入ws服务端
+const PluginManager = require('./api/plugin-manager'); // 引入插件管理器
 
 // 定义配置文件的路径，区分开发环境和生产环境
 const isProduction = !process.defaultApp;
@@ -16,11 +17,23 @@ if (isProduction) {
 const configPath = path.join(basePath, 'config.json');
 // 群组配置路径
 const groupConfigPath = path.join(basePath, 'group.json');
+// 插件目录路径
+const pluginsDir = path.join(basePath, 'plugins');
 
 // 默认配置
 const defaultConfig = { port: 8080, accessToken: '', showHeartbeat: true };
 // 默认群组配置
 const defaultGroupConfig = { groups: {} };
+
+// 全局变量
+let mainWindow;
+let wss = null; // WebSocketServer实例
+let connectedClient = null; // 当前连接的客户端
+let groupConfig = defaultGroupConfig; // 群组配置
+let pluginManager = null; // 插件管理器实例
+
+// 用于存储API请求和响应的映射
+const apiRequests = new Map();
 
 // 读取配置文件的函数
 function readConfig() {
@@ -69,16 +82,19 @@ function readGroupConfig() {
             const rawData = fs.readFileSync(groupConfigPath, 'utf-8');
             const parsedData = JSON.parse(rawData);
             // 合并默认配置，以防配置文件缺少某些键
-            return { ...defaultGroupConfig, ...parsedData };
+            groupConfig = { ...defaultGroupConfig, ...parsedData };
+            return groupConfig;
         } else {
             // 文件不存在，写入默认配置并返回
             writeGroupConfig(defaultGroupConfig);
-            return defaultGroupConfig;
+            groupConfig = defaultGroupConfig;
+            return groupConfig;
         }
     } catch (error) {
         console.error('读取或解析 group.json 失败:', error, `路径: ${groupConfigPath}`);
         // 出错时返回默认配置
-        return defaultGroupConfig;
+        groupConfig = defaultGroupConfig;
+        return groupConfig;
     }
 }
 
@@ -113,13 +129,6 @@ function writeGroupConfig(config) {
         return false;
     }
 }
-
-let mainWindow;
-let wss = null; // WebSocketServer实例
-let connectedClient = null; // 当前连接的客户端
-
-// 用于存储API请求和响应的映射
-const apiRequests = new Map();
 
 function createWindow() {
   // 确定应用图标路径（区分开发环境和打包后的环境）
@@ -192,6 +201,11 @@ function startServer(port, accessToken) {
     sendToRenderer('server-log', `WebSocket服务器正在监听端口: ${port}`);
     sendToRenderer('server-status-update', { isRunning: true, port: port, clientConnected: !!connectedClient });
 
+    // 确保已加载群组配置
+    if (!groupConfig) {
+      groupConfig = readGroupConfig();
+    }
+
     wss.on('connection', (ws, req) => {
       // 简单的Token验证 (可以在Header或URL参数中传递)
       // 注意：OneBot标准反向WS通常在Header 'Authorization: Bearer YOUR_TOKEN' 中传递
@@ -215,15 +229,92 @@ function startServer(port, accessToken) {
       sendToRenderer('server-log', `客户端已连接: ${clientIp}`);
       sendToRenderer('server-status-update', { isRunning: true, port: port, clientConnected: true });
 
+      // 为WebSocket客户端添加callApi方法，使插件能够调用OneBot API
+      connectedClient.callApi = async function(action, params = {}) {
+          try {
+              if (!connectedClient || connectedClient.readyState !== connectedClient.OPEN) {
+                  console.log('API调用失败: 客户端未连接', {action, params});
+                  return { status: 'failed', retcode: -1, message: '客户端未连接或连接未就绪' };
+              }
+              
+              const echo = `api_${action}_${Date.now().toString()}`; // 使用API名称和时间戳作为echo
+              const request = JSON.stringify({ action, params, echo });
+              
+              // 创建一个Promise用于等待响应
+              const responsePromise = new Promise((resolve, reject) => {
+                  // 设置超时，5秒后如果没有收到响应则reject
+                  const timeoutId = setTimeout(() => {
+                      apiRequests.delete(echo);
+                      reject(new Error('API请求超时'));
+                  }, 5000);
+                  
+                  // 存储请求信息和resolve/reject函数
+                  apiRequests.set(echo, { resolve, reject, timeoutId });
+              });
+              
+              // 发送请求
+              sendToRenderer('server-log', `发送API请求: ${request}`);
+              connectedClient.send(request);
+              console.log(`API请求已发送: action=${action}, echo=${echo}`);
+              
+              try {
+                  // 等待响应
+                  return await responsePromise;
+              } catch (error) {
+                  console.error('API响应处理失败:', error);
+                  return { status: 'failed', retcode: -3, message: `响应处理失败: ${error.message}` };
+              }
+          } catch (error) {
+              console.error('API调用失败:', error, {action, params});
+              sendToRenderer('server-log', `发送API请求失败: ${error.message}`);
+              return { status: 'failed', retcode: -2, message: `发送失败: ${error.message}` };
+          }
+      };
 
-      ws.on('message', (message) => {
-        sendToRenderer('server-log', `收到客户端消息: ${message}`);
-        // 在这里处理来自OneBot客户端的消息
-         try {
+      // 创建插件管理器
+      pluginManager = new PluginManager(connectedClient, readConfig());
+      pluginManager.setLogger((message, type) => {
+        sendToRenderer('server-log', message, type);
+      });
+
+      // 加载插件
+      pluginManager.loadPlugins(pluginsDir)
+        .then(() => {
+          sendToRenderer('server-log', '插件加载完成');
+        })
+        .catch(err => {
+          sendToRenderer('server-log', `加载插件出错: ${err.message}`, 'error');
+        });
+
+      ws.on('message', async (message) => {
+        try {
             const parsedMessage = JSON.parse(message);
             
+            // 记录接收到的消息（除非是心跳消息且设置了不显示）
+            const isHeartbeat = parsedMessage.post_type === 'meta_event' && 
+                                parsedMessage.meta_event_type === 'heartbeat';
+            
+            const config = readConfig();
+            if (!isHeartbeat || config.showHeartbeat) {
+                sendToRenderer('server-log', `收到客户端消息: ${message}`);
+            }
+            
+            // 处理不同类型的消息
+            if (parsedMessage.post_type === 'message') {
+                // 发送到渲染进程
+                sendToRenderer('ws-message', parsedMessage);
+                
+                // 让插件管理器处理消息
+                if (pluginManager) {
+                    try {
+                        await pluginManager.handleMessage(parsedMessage, groupConfig);
+                    } catch (pluginError) {
+                        sendToRenderer('server-log', `插件处理消息出错: ${pluginError.message}`, 'error');
+                    }
+                }
+            } 
             // 检查是否是API响应
-            if (parsedMessage.echo && apiRequests.has(parsedMessage.echo)) {
+            else if (parsedMessage.echo && apiRequests.has(parsedMessage.echo)) {
                 const { resolve, reject, timeoutId } = apiRequests.get(parsedMessage.echo);
                 
                 // 清除超时计时器
@@ -242,17 +333,18 @@ function startServer(port, accessToken) {
                 // 解析响应
                 resolve(parsedMessage);
             } else {
-                // 如果不是API响应，发送到渲染进程
+                // 其他类型的消息，发送到渲染进程
                 sendToRenderer('ws-message', parsedMessage);
             }
-         } catch(e) {
+        } catch(e) {
             sendToRenderer('server-log', `无法解析收到的消息: ${e}`);
-         }
+        }
       });
 
       ws.on('close', (code, reason) => {
         sendToRenderer('server-log', `客户端断开连接: Code ${code}, Reason: ${reason || 'N/A'}`);
         connectedClient = null;
+        pluginManager = null; // 清除插件管理器
         if (wss) { 
              sendToRenderer('server-status-update', { isRunning: true, port: wss.options.port, clientConnected: false });
         } else {
@@ -264,6 +356,7 @@ function startServer(port, accessToken) {
         sendToRenderer('server-log', `客户端WebSocket错误: ${error.message}`);
         if(connectedClient === ws){
              connectedClient = null;
+             pluginManager = null; // 清除插件管理器
              if (wss) {
                  sendToRenderer('server-status-update', { isRunning: true, port: wss.options.port, clientConnected: false });
              } else {
@@ -301,6 +394,7 @@ function stopServer() {
           }
       });
       wss = null;
+      pluginManager = null; // 清除插件管理器
       sendToRenderer('server-status-update', { isRunning: false, port: null, clientConnected: false });
     } else {
        sendToRenderer('server-log', '服务器未运行。');
@@ -414,40 +508,36 @@ ipcMain.handle('get-group-config', async (event) => {
 });
 
 // 保存群组配置
-ipcMain.on('save-group-config', (event, groupConfig) => {
+ipcMain.on('save-group-config', (event, newConfig) => {
   try {
-    console.log('收到保存群组配置请求:', groupConfig);
+    console.log('收到保存群组配置请求:', newConfig);
     
     // 验证配置有效性
-    if (!groupConfig || typeof groupConfig !== 'object' || !groupConfig.groups) {
-      console.error('无效的群组配置对象:', groupConfig);
-      sendToRenderer('server-log', '保存群组配置失败: 无效的配置格式');
+    if (!newConfig || typeof newConfig !== 'object') {
+      console.error('无效的群组配置对象:', newConfig);
       return;
     }
     
-    // 记录群组信息
-    const groups = Object.values(groupConfig.groups);
-    console.log(`群组数量: ${groups.length}`);
-    if (groups.length > 0) {
-      console.log('群组列表:', groups.map(g => `${g.id}(${g.name})`).join(', '));
+    // 确保groups属性存在
+    if (!newConfig.groups) {
+      newConfig.groups = {};
     }
     
     // 写入配置
-    const result = writeGroupConfig(groupConfig);
+    const result = writeGroupConfig(newConfig);
     
     if (result) {
-      // 保存成功
-      sendToRenderer('server-log', `群组配置已保存，共${groups.length}个群`);
-      console.log('群组配置已成功保存');
+      // 更新全局变量
+      groupConfig = newConfig;
       
-      // 通知渲染进程配置已更新
-      mainWindow.webContents.send('group-config-updated', groupConfig);
+      // 通知渲染进程配置已保存
+      sendToRenderer('server-log', `群组配置已保存，共 ${Object.keys(newConfig.groups).length} 个群组`);
     } else {
-      sendToRenderer('server-log', '保存群组配置失败，请检查控制台日志');
+      sendToRenderer('server-log', `保存群组配置失败`, 'error');
     }
   } catch (error) {
     console.error('保存群组配置失败:', error);
-    sendToRenderer('server-log', `保存群组配置失败: ${error.message}`);
+    sendToRenderer('server-log', `保存群组配置失败: ${error.message}`, 'error');
   }
 });
 
@@ -530,4 +620,34 @@ ipcMain.handle('call-onebot-api', async (event, action, params) => {
 ipcMain.handle('is-group-enabled', async (event, groupId) => {
   const groupConfig = readGroupConfig();
   return groupConfig.groups[groupId]?.enabled === true;
+});
+
+// 获取插件列表
+ipcMain.handle('get-plugins', async (event) => {
+  if (!pluginManager) {
+    return { error: '服务器未运行或插件系统未初始化' };
+  }
+  
+  try {
+    // 收集插件信息
+    const pluginsList = [];
+    for (const [name, plugin] of pluginManager.plugins) {
+      pluginsList.push({
+        name: name,
+        description: plugin.description || '无描述信息',
+        status: 'active'
+      });
+    }
+    
+    return { 
+      success: true, 
+      plugins: pluginsList,
+      count: pluginsList.length
+    };
+  } catch (error) {
+    console.error('获取插件列表出错:', error);
+    return { 
+      error: `获取插件列表失败: ${error.message}` 
+    };
+  }
 }); 
