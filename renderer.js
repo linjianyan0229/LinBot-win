@@ -11,6 +11,15 @@ const serverLogContainer = document.getElementById('server-log-container');
 const serverLogDisplay = document.getElementById('server-log-display'); // 新的服务器日志展示区
 const eventLogContainer = document.getElementById('event-log-container');
 const showHeartbeatCheckbox = document.getElementById('showHeartbeat'); // 获取复选框元素
+
+// 机器人状态元素
+const botAccountId = document.getElementById('bot-account-id');
+const botNickname = document.getElementById('bot-nickname');
+const botLoginStatus = document.getElementById('bot-login-status');
+const deviceType = document.getElementById('device-type');
+const deviceOnlineStatus = document.getElementById('device-online-status');
+const protocolVersion = document.getElementById('protocol-version');
+
 let showHeartbeatState = true; // Add a variable to hold the state
 let configLoaded = false; // Add a flag to track if config is loaded
 let listenersInitialized = false; // Add flag for listener initialization
@@ -25,6 +34,9 @@ const getGroupListBtn = document.getElementById('getGroupListBtn');
 // 插件管理相关元素
 const pluginTableBody = document.getElementById('pluginTableBody');
 const pluginStatus = document.getElementById('plugin-status');
+
+// 刷新机器人状态按钮
+const refreshBotStatusBtn = document.getElementById('refreshBotStatus');
 
 // --- 群聊管理功能 ---
 let groupConfig = { groups: {} };
@@ -278,7 +290,158 @@ function getGroupName(groupId) {
     }
 }
 
-// --- UI状态更新 (恢复被删除的代码) ---
+// --- 机器人状态处理 ---
+function updateBotInfo(data) {
+    if (!data) return;
+    
+    try {
+        // 更新账号信息
+        if (data.user_id && botAccountId) {
+            botAccountId.textContent = data.user_id;
+        }
+        
+        if (data.nickname && botNickname) {
+            botNickname.textContent = data.nickname;
+        }
+        
+        // 在线状态判断逻辑调整：只要获取到账号信息就视为在线
+        // NapCatQQ API可能不直接提供online字段，但既然能获取到账号信息就说明已登录
+        if (botLoginStatus) {
+            // 只要能获取到账号ID和昵称，就认为是已登录状态
+            const isLoggedIn = data.user_id && data.nickname;
+            const status = isLoggedIn ? '已登录' : '未登录';
+            botLoginStatus.textContent = status;
+            botLoginStatus.style.color = isLoggedIn ? '#155724' : '#721c24';
+        }
+        
+        // 更新设备信息
+        if (data.device_type && deviceType) {
+            deviceType.textContent = data.device_type;
+        } else if (data.app_name && deviceType) {
+            deviceType.textContent = data.app_name;
+        }
+        
+        if (deviceOnlineStatus) {
+            // 同样，如果能获取到基本信息，就认为设备在线
+            const isOnline = data.user_id && (data.device_type || data.app_name);
+            deviceOnlineStatus.textContent = isOnline ? '在线' : '离线';
+            deviceOnlineStatus.style.color = isOnline ? '#155724' : '#721c24';
+        }
+        
+        if (data.protocol_version && protocolVersion) {
+            protocolVersion.textContent = data.protocol_version;
+        } else if (data.version && protocolVersion) {
+            protocolVersion.textContent = data.version;
+        }
+        
+        addServerLog(`已更新机器人状态信息: ID=${data.user_id}, 昵称=${data.nickname}`, 'info');
+    } catch (error) {
+        console.error('更新机器人信息失败:', error);
+        addServerLog(`更新机器人信息失败: ${error.message}`, 'error');
+    }
+}
+
+// 获取机器人状态信息
+async function fetchBotStatus() {
+    try {
+        if (!window.serverRunning) {
+            addServerLog('服务器未运行，无法获取机器人状态', 'error');
+            return;
+        }
+        
+        // 获取API对象
+        const api = getApi();
+        if (!api) {
+            addServerLog('API对象未初始化，无法获取机器人状态', 'error');
+            return;
+        }
+        
+        // 调用get_login_info API
+        const loginInfo = await api.call('get_login_info');
+        addServerLog(`获取登录信息响应: ${JSON.stringify(loginInfo)}`, 'info');
+        
+        if (loginInfo && loginInfo.data) {
+            updateBotInfo(loginInfo.data);
+            
+            // 尝试获取更多设备信息
+            try {
+                const versionInfo = await api.call('get_version_info');
+                addServerLog(`获取版本信息响应: ${JSON.stringify(versionInfo)}`, 'info');
+                
+                if (versionInfo && versionInfo.data) {
+                    // 合并版本信息到状态数据中
+                    updateBotInfo({
+                        ...loginInfo.data,
+                        ...versionInfo.data
+                    });
+                }
+            } catch (e) {
+                console.error('获取版本信息失败:', e);
+                // 继续使用已有的登录信息
+            }
+        } else {
+            addServerLog('获取机器人登录信息失败', 'error');
+        }
+    } catch (error) {
+        console.error('获取机器人状态失败:', error);
+        addServerLog(`获取机器人状态失败: ${error.message}`, 'error');
+    }
+}
+
+// --- IPC 监听器 (确保只初始化一次) ---
+function initializeListeners() {
+    if (listenersInitialized) {
+        return; // Already initialized
+    }
+    window.electronAPI.onServerLog((message) => {
+        const isError = /错误|失败|error|fail/i.test(message.toString());
+        addServerLog(message, isError ? 'error' : 'info');
+    });
+
+    window.electronAPI.onServerStatusUpdate((status) => {
+        updateUIState(status.isRunning, status.port, status.clientConnected);
+        
+        // 当服务器状态变为运行时，尝试获取机器人信息
+        if (status.isRunning && status.clientConnected) {
+            // 延迟一点获取机器人信息，确保连接已经稳定
+            setTimeout(() => {
+                fetchBotStatus();
+            }, 2000);
+        }
+    });
+
+    window.electronAPI.onWsMessage((message) => {
+        addEventLog(message); 
+        
+        // 检查是否是登录相关事件
+        if (message.post_type === 'meta_event' && message.meta_event_type === 'lifecycle') {
+            // 机器人连接/断开事件
+            const isConnected = message.sub_type === 'connect' || message.sub_type === 'enable';
+            if (isConnected) {
+                // 连接成功，尝试获取机器人信息
+                setTimeout(() => {
+                    fetchBotStatus();
+                }, 1000);
+            }
+        }
+        
+        // 检查是否是API响应
+        if (message.echo && message.echo.startsWith('api_get_group_list')) {
+            console.log('收到群列表API响应:', message);
+            
+            // 检查响应是否成功
+            if (message.status === 'ok' && message.retcode === 0 && Array.isArray(message.data)) {
+                // 处理群列表数据
+                processGroupList(message.data);
+            } else {
+                addServerLog(`获取群列表失败: ${message.message || '未知错误'}`, 'error');
+            }
+        }
+    });
+    listenersInitialized = true;
+}
+
+// --- UI状态更新 ---
 function updateUIState(isRunning, port, clientConnected) {
     try {
         startBtn.disabled = isRunning;
@@ -298,6 +461,20 @@ function updateUIState(isRunning, port, clientConnected) {
             } else {
                 statusBar.textContent = '服务器未运行';
                 statusBar.className = 'status-bar stopped';
+                
+                // 重置机器人状态信息
+                if (botAccountId) botAccountId.textContent = '暂无数据';
+                if (botNickname) botNickname.textContent = '暂无数据';
+                if (botLoginStatus) {
+                    botLoginStatus.textContent = '未登录';
+                    botLoginStatus.style.color = '#721c24';
+                }
+                if (deviceType) deviceType.textContent = '暂无数据';
+                if (deviceOnlineStatus) {
+                    deviceOnlineStatus.textContent = '离线';
+                    deviceOnlineStatus.style.color = '#721c24';
+                }
+                if (protocolVersion) protocolVersion.textContent = '暂无数据';
             }
             
             // 添加客户端状态
@@ -319,7 +496,7 @@ function updateUIState(isRunning, port, clientConnected) {
     }
 }
 
-// --- 事件处理 ---
+// 事件处理 - 添加机器人状态刷新按钮事件处理
 startBtn.addEventListener('click', function() {
     try {
         // 获取当前配置
@@ -377,39 +554,26 @@ accessTokenInput.addEventListener('blur', function() {
     saveConfig();
 });
 
-// --- IPC 监听器 (确保只初始化一次) (恢复被删除的代码) ---
-function initializeListeners() {
-    if (listenersInitialized) {
-        return; // Already initialized
-    }
-    window.electronAPI.onServerLog((message) => {
-        const isError = /错误|失败|error|fail/i.test(message.toString());
-        addServerLog(message, isError ? 'error' : 'info');
-    });
-
-    window.electronAPI.onServerStatusUpdate((status) => {
-        updateUIState(status.isRunning, status.port, status.clientConnected);
-    });
-
-    window.electronAPI.onWsMessage((message) => {
-        addEventLog(message); 
+// 刷新机器人状态按钮点击事件
+if (refreshBotStatusBtn) {
+    refreshBotStatusBtn.addEventListener('click', async () => {
+        // 添加视觉反馈
+        const originalText = refreshBotStatusBtn.textContent;
+        refreshBotStatusBtn.textContent = '正在刷新...';
+        refreshBotStatusBtn.disabled = true;
         
-        // 检查是否是API响应
-        if (message.echo && message.echo.startsWith('api_get_group_list')) {
-            console.log('收到群列表API响应:', message);
-            
-            // 检查响应是否成功
-            if (message.status === 'ok' && message.retcode === 0 && Array.isArray(message.data)) {
-                // 处理群列表数据
-                processGroupList(message.data);
-            } else {
-                addServerLog(`获取群列表失败: ${message.message || '未知错误'}`, 'error');
-            }
+        addServerLog('正在刷新机器人状态...');
+        
+        try {
+            await fetchBotStatus();
+        } catch (error) {
+            addServerLog(`刷新状态失败: ${error.message}`, 'error');
+        } finally {
+            // 恢复按钮状态
+            refreshBotStatusBtn.textContent = originalText;
+            refreshBotStatusBtn.disabled = false;
         }
     });
-    listenersInitialized = true;
-    // Remove console.log
-    // console.log('IPC listeners initialized.'); 
 }
 
 // --- 群聊管理功能 ---

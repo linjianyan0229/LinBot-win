@@ -480,7 +480,7 @@
         <div class="nav-sidebar">
             <div class="nav-header">LinBot UI</div>
             <div class="nav-links">
-                <div class="nav-item active" data-page="server-page">服务器控制</div>
+                <div class="nav-item active" data-page="server-page">机器人状态</div>
                 <div class="nav-item" data-page="server-log-page">服务器日志</div>
                 <div class="nav-item" data-page="event-log-page">事件日志</div>
                 <div class="nav-item" data-page="group-management-page">群组管理</div>
@@ -492,7 +492,7 @@
         <div class="content-wrapper">
             <!-- 服务器控制页面 -->
             <div id="server-page" class="page-container active">
-                <h2 class="page-title">服务器控制</h2>
+                <h2 class="page-title">机器人状态</h2>
                 
                 <div class="config-panel">
                     <div class="form-group">
@@ -514,6 +514,46 @@
                 <div id="status-bar" class="status-bar stopped">
                     服务未运行
                     <span id="client-status"></span>
+                </div>
+                
+                <!-- 新增机器人状态信息面板 -->
+                <div class="section-container">
+                    <h3>机器人账号信息</h3>
+                    <table class="data-table">
+                        <tr>
+                            <td width="30%">账号ID:</td>
+                            <td id="bot-account-id">暂无数据</td>
+                        </tr>
+                        <tr>
+                            <td>昵称:</td>
+                            <td id="bot-nickname">暂无数据</td>
+                        </tr>
+                        <tr>
+                            <td>登录状态:</td>
+                            <td id="bot-login-status">未登录</td>
+                        </tr>
+                    </table>
+                    <div style="margin-top: 10px; text-align: right;">
+                        <button id="refreshBotStatus">刷新状态</button>
+                    </div>
+                </div>
+                
+                <div class="section-container">
+                    <h3>设备信息</h3>
+                    <table class="data-table">
+                        <tr>
+                            <td width="30%">设备类型:</td>
+                            <td id="device-type">暂无数据</td>
+                        </tr>
+                        <tr>
+                            <td>在线状态:</td>
+                            <td id="device-online-status">离线</td>
+                        </tr>
+                        <tr>
+                            <td>协议版本:</td>
+                            <td id="protocol-version">暂无数据</td>
+                        </tr>
+                    </table>
                 </div>
                 
                 <div id="server-log-container" class="log-container"></div>
