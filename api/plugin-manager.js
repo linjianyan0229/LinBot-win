@@ -35,26 +35,27 @@ class PluginManager {
                 this.log(`插件目录不存在，已创建: ${pluginsDir}`);
             }
 
-            // 获取所有插件文件
-            const pluginFiles = fs.readdirSync(pluginsDir)
-                .filter(file => file.endsWith('.js'));
+            // 获取所有插件文件（包括子目录）
+            const pluginFiles = this.findPluginFiles(pluginsDir);
 
             if (pluginFiles.length === 0) {
                 this.log('没有找到插件文件');
                 return;
             }
 
+            this.log(`发现 ${pluginFiles.length} 个插件文件`);
+
             // 逐个加载插件
-            for (const file of pluginFiles) {
+            for (const filePath of pluginFiles) {
                 try {
-                    const pluginPath = path.join(pluginsDir, file);
-                    this.log(`正在加载插件: ${file}`);
+                    const relativePath = path.relative(pluginsDir, filePath);
+                    this.log(`正在加载插件: ${relativePath}`);
                     
                     // 删除缓存，确保重新加载最新版本
-                    delete require.cache[require.resolve(pluginPath)];
+                    delete require.cache[require.resolve(filePath)];
                     
                     // 加载插件模块
-                    const PluginClass = require(pluginPath);
+                    const PluginClass = require(filePath);
                     
                     // 实例化插件并注册
                     const plugin = new PluginClass(this.client);
@@ -62,15 +63,45 @@ class PluginManager {
                     // 注册插件
                     await this.registerPlugin(plugin);
                     
-                    this.log(`插件加载成功: ${plugin.name || file}`);
+                    this.log(`插件加载成功: ${plugin.name || relativePath}`);
                 } catch (error) {
-                    this.log(`加载插件 ${file} 失败: ${error.message}`, 'error');
+                    this.log(`加载插件 ${filePath} 失败: ${error.message}`, 'error');
                 }
             }
             
             this.log(`插件加载完成，共加载 ${this.plugins.size} 个插件`);
         } catch (error) {
             this.log(`加载插件目录失败: ${error.message}`, 'error');
+        }
+    }
+
+    /**
+     * 递归查找所有插件文件
+     * @param {string} dir 目录路径
+     * @param {Array} result 结果数组
+     * @returns {Array} 插件文件路径数组
+     */
+    findPluginFiles(dir, result = []) {
+        try {
+            const files = fs.readdirSync(dir);
+            
+            for (const file of files) {
+                const filePath = path.join(dir, file);
+                const stat = fs.statSync(filePath);
+                
+                if (stat.isDirectory()) {
+                    // 递归扫描子目录
+                    this.findPluginFiles(filePath, result);
+                } else if (file.endsWith('.js')) {
+                    // 只添加.js文件
+                    result.push(filePath);
+                }
+            }
+            
+            return result;
+        } catch (error) {
+            this.log(`扫描目录 ${dir} 失败: ${error.message}`, 'error');
+            return result;
         }
     }
 
@@ -83,6 +114,12 @@ class PluginManager {
             // 检查插件是否有必要的属性
             if (!plugin.name) {
                 throw new Error('插件缺少name属性');
+            }
+
+            // 避免重复注册同名插件
+            if (this.plugins.has(plugin.name)) {
+                this.log(`插件 ${plugin.name} 已存在，跳过注册`, 'warning');
+                return false;
             }
 
             // 调用插件初始化方法（如果存在）
