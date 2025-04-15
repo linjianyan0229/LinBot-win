@@ -22,6 +22,10 @@ const refreshGroupsBtn = document.getElementById('refreshGroupsBtn');
 const groupTableBody = document.getElementById('groupTableBody');
 const getGroupListBtn = document.getElementById('getGroupListBtn');
 
+// 插件管理相关元素
+const pluginTableBody = document.getElementById('pluginTableBody');
+const pluginStatus = document.getElementById('plugin-status');
+
 // --- 群聊管理功能 ---
 let groupConfig = { groups: {} };
 
@@ -198,38 +202,121 @@ function addEventLog(message) {
             return;
         }
         
-        const isHeartbeat = typeof message === 'object' && message.meta_event_type === 'heartbeat';
-        
-        if (isHeartbeat && !showHeartbeatState) {
-            console.log('[addEventLog] 心跳消息被过滤');
-            return; // Skip logging
+        // 只处理消息类型的事件
+        if (typeof message !== 'object' || message.post_type !== 'message') {
+            // 可以选择完全不显示非消息事件，或者以其他格式显示
+            return;
         }
         
-        // 同时输出到控制台，便于调试
-        console.log(`[事件日志] ${typeof message === 'object' ? JSON.stringify(message) : message}`);
+        // 过滤心跳消息
+        const isHeartbeat = message.meta_event_type === 'heartbeat';
+        if (isHeartbeat && !showHeartbeatState) {
+            return;
+        }
         
-        addLog(eventLogContainer, message, message.post_type || (message.echo ? 'api' : 'info'));
+        // 获取消息类型、群名称、发送者信息等
+        let formattedMessage = '';
+        
+        if (message.message_type === 'group') {
+            // 群聊消息
+            const groupId = message.group_id || '未知群号';
+            const groupName = getGroupName(groupId);
+            const senderName = message.sender?.nickname || '未知用户';
+            const senderId = message.user_id || '未知';
+            const content = message.raw_message || message.message || '';
+            
+            formattedMessage = `[INFO] 接收 <- 群聊 [${groupName}(${groupId})] [${senderName}(${senderId})] ${content}`;
+        } else if (message.message_type === 'private') {
+            // 私聊消息
+            const senderName = message.sender?.nickname || '未知用户';
+            const senderId = message.user_id || '未知';
+            const content = message.raw_message || message.message || '';
+            
+            formattedMessage = `[INFO] 接收 <- 私聊 [${senderName}(${senderId})] ${content}`;
+        } else {
+            // 其他类型消息，可以不显示或使用默认格式
+            return;
+        }
+        
+        // 创建日志条目
+        const logEntry = document.createElement('div');
+        logEntry.className = 'log-entry';
+
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'log-time';
+        timeSpan.textContent = `[${new Date().toLocaleTimeString()}]`;
+
+        const messageSpan = document.createElement('span');
+        messageSpan.className = 'log-type-message';
+        messageSpan.textContent = formattedMessage;
+
+        // 去掉时间戳，因为格式中已经包含了[INFO]类型标记
+        // logEntry.appendChild(timeSpan);
+        logEntry.appendChild(messageSpan);
+
+        eventLogContainer.appendChild(logEntry);
+        eventLogContainer.scrollTop = eventLogContainer.scrollHeight; // 自动滚动到底部
+        
+        // 输出到控制台以便调试
+        console.log(`[事件日志] ${formattedMessage}`);
     } catch (error) {
         console.error('添加事件日志失败:', error, '原始消息:', message);
     }
 }
 
+// 根据群ID获取群名称的辅助函数
+function getGroupName(groupId) {
+    try {
+        // 如果有群组配置数据，尝试从中获取群名称
+        if (groupConfig && groupConfig.groups && groupConfig.groups[groupId]) {
+            return groupConfig.groups[groupId].name || `群${groupId}`;
+        }
+        return `群${groupId}`;
+    } catch (error) {
+        console.error('获取群名称出错:', error);
+        return `群${groupId}`;
+    }
+}
+
 // --- UI状态更新 (恢复被删除的代码) ---
 function updateUIState(isRunning, port, clientConnected) {
-    statusBar.className = `status-bar ${isRunning ? 'running' : 'stopped'}`;
-    statusBar.firstChild.textContent = isRunning ? `服务运行中 (端口: ${port})` : '服务未运行';
-
-    if (isRunning) {
-        clientStatusSpan.textContent = clientConnected ? '客户端已连接' : '等待客户端连接...';
-        clientStatusSpan.className = clientConnected ? 'client-connected' : 'client-disconnected';
-    } else {
-        clientStatusSpan.textContent = ''; // 服务停止时不显示客户端状态
+    try {
+        startBtn.disabled = isRunning;
+        stopBtn.disabled = !isRunning;
+        listenPortInput.disabled = isRunning;
+        accessTokenInput.disabled = isRunning;
+        
+        // 保存服务器状态到全局变量，供其他函数使用
+        window.serverRunning = isRunning;
+        window.clientConnected = clientConnected;
+        
+        // 更新状态栏
+        if (statusBar) {
+            if (isRunning) {
+                statusBar.textContent = `服务器正在运行，监听端口: ${port}`;
+                statusBar.className = 'status-bar running';
+            } else {
+                statusBar.textContent = '服务器未运行';
+                statusBar.className = 'status-bar stopped';
+            }
+            
+            // 添加客户端状态
+            if (clientStatusSpan) {
+                if (clientConnected) {
+                    clientStatusSpan.textContent = '客户端已连接';
+                    clientStatusSpan.className = 'client-connected';
+                } else {
+                    clientStatusSpan.textContent = '客户端未连接';
+                    clientStatusSpan.className = 'client-disconnected';
+                }
+            }
+        }
+        
+        // 更新插件状态
+        updatePluginStatus();
+    } catch (error) {
+        console.error('更新UI状态失败:', error);
     }
-
-    startBtn.disabled = isRunning;
-    stopBtn.disabled = !isRunning;
-    listenPortInput.disabled = isRunning;
-    accessTokenInput.disabled = isRunning;
 }
 
 // --- 事件处理 ---
@@ -573,32 +660,145 @@ window.electronAPI.onGroupInfoUpdated((groupInfo) => {
     }
 });
 
-// 页面加载完成后初始化
-document.addEventListener('DOMContentLoaded', async () => {
-    addServerLog('DOM内容加载完成，开始初始化...', 'info');
+// 页面切换功能
+function initializePageSwitcher() {
+    // 获取所有导航项和页面容器
+    const navItems = document.querySelectorAll('.nav-item');
+    const pageContainers = document.querySelectorAll('.page-container');
     
+    // 点击导航项时切换页面
+    navItems.forEach(item => {
+        item.addEventListener('click', function() {
+            // 移除所有导航项的active类
+            navItems.forEach(i => i.classList.remove('active'));
+            // 添加当前导航项的active类
+            this.classList.add('active');
+            
+            // 获取要显示的页面ID
+            const targetPageId = this.getAttribute('data-page');
+            
+            // 隐藏所有页面
+            pageContainers.forEach(container => {
+                container.classList.remove('active');
+            });
+            
+            // 显示目标页面
+            const targetPage = document.getElementById(targetPageId);
+            if (targetPage) {
+                targetPage.classList.add('active');
+            } else {
+                console.error(`找不到页面: ${targetPageId}`);
+            }
+        });
+    });
+}
+
+// 初始化页面
+document.addEventListener('DOMContentLoaded', function() {
+    // 加载配置
+    loadConfig().catch(error => {
+        console.error('加载配置失败:', error);
+    });
+    
+    // 初始化页面切换功能
+    initializePageSwitcher();
+    
+    // 初始化其他监听器
+    initializeListeners();
+    
+    // 加载群组配置
+    loadGroupConfig().catch(error => {
+        console.error('加载群组配置失败:', error);
+    });
+});
+
+// 更新插件状态
+async function updatePluginStatus() {
     try {
-        console.log('开始初始化应用...');
-        
-        // 初始化监听器
-        initializeListeners();
-        
-        // 加载配置
-        await loadConfig();
-        
-        // 加载群组配置
-        await loadGroupConfig();
-        
-        // 初始化API
-        const api = getApi();
-        if (api) {
-            console.log('API模块初始化成功');
-        } else {
-            console.warn('API模块初始化失败');
+        if (!pluginStatus) {
+            console.error('找不到插件状态元素');
+            return;
         }
         
-        console.log('应用初始化完成');
+        // 检查服务器状态
+        if (!window.serverRunning) {
+            pluginStatus.textContent = '服务器未运行，无法使用插件功能';
+            pluginStatus.style.color = '#721c24';
+            return;
+        }
+        
+        // 获取插件列表
+        const result = await window.electronAPI.getPlugins();
+        
+        if (result.error) {
+            pluginStatus.textContent = result.error;
+            pluginStatus.style.color = '#721c24';
+            return;
+        }
+        
+        // 更新状态文本
+        pluginStatus.textContent = `已加载 ${result.count} 个插件`;
+        pluginStatus.style.color = '#155724';
+        
+        // 更新插件表格
+        updatePluginTable(result.plugins);
     } catch (error) {
-        console.error('应用初始化失败:', error);
+        console.error('更新插件状态失败:', error);
+        if (pluginStatus) {
+            pluginStatus.textContent = `获取插件信息出错: ${error.message}`;
+            pluginStatus.style.color = '#721c24';
+        }
     }
-});
+}
+
+// 更新插件表格
+function updatePluginTable(plugins) {
+    try {
+        if (!pluginTableBody) {
+            console.error('找不到插件表格元素');
+            return;
+        }
+        
+        // 清空现有内容
+        pluginTableBody.innerHTML = '';
+        
+        if (!plugins || plugins.length === 0) {
+            const row = document.createElement('tr');
+            const cell = document.createElement('td');
+            cell.colSpan = 3;
+            cell.textContent = '没有加载任何插件';
+            cell.style.textAlign = 'center';
+            row.appendChild(cell);
+            pluginTableBody.appendChild(row);
+            return;
+        }
+        
+        // 添加每个插件的行
+        plugins.forEach(plugin => {
+            const row = document.createElement('tr');
+            
+            // 插件名称
+            const nameCell = document.createElement('td');
+            nameCell.textContent = plugin.name;
+            row.appendChild(nameCell);
+            
+            // 插件描述
+            const descCell = document.createElement('td');
+            descCell.textContent = plugin.description;
+            row.appendChild(descCell);
+            
+            // 插件状态
+            const statusCell = document.createElement('td');
+            const statusSpan = document.createElement('span');
+            statusSpan.textContent = plugin.status === 'active' ? '已启用' : '已禁用';
+            statusSpan.className = plugin.status === 'active' ? 'status-enabled' : 'status-disabled';
+            statusCell.appendChild(statusSpan);
+            row.appendChild(statusCell);
+            
+            // 添加到表格
+            pluginTableBody.appendChild(row);
+        });
+    } catch (error) {
+        console.error('更新插件表格失败:', error);
+    }
+}

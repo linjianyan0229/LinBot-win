@@ -67,5 +67,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
   
   // 提供完整的API模块对象
-  api: apiObject
+  api: apiObject,
+
+  // 插件相关API
+  getPlugins: async () => await ipcRenderer.invoke('get-plugins'),
 }); 

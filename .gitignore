@@ -1,6 +1,7 @@
 # 依赖包目录
 /node_modules
 /node_modules/
+/dist
 
 # 日志文件
 npm-debug.log*
