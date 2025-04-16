@@ -170,7 +170,8 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false, // 禁用Node集成
       contextIsolation: true, // 启用上下文隔离
-      preload: path.join(__dirname, 'preload.js') // 指定预加载脚本
+      preload: path.join(__dirname, 'preload.js'), // 指定预加载脚本
+      devTools: !app.isPackaged // 仅在开发环境启用开发者工具
     }
   });
 
@@ -184,8 +185,25 @@ function createWindow() {
     console.warn(`图标文件不存在: ${iconPath}`);
   }
   
+  // 生产环境下禁用开发者工具
+  if (app.isPackaged) {
+    // 禁用开发者工具
+    mainWindow.webContents.on('devtools-opened', () => {
+      mainWindow.webContents.closeDevTools();
+    });
+    
+    // 禁用常见的开发者工具快捷键
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      if ((input.control || input.meta) && input.key.toLowerCase() === 'i' || // Ctrl+I/Cmd+I
+          (input.control || input.meta) && input.shift && input.key.toLowerCase() === 'j' || // Ctrl+Shift+J/Cmd+Shift+J
+          input.key === 'f12' || // F12
+          (input.control || input.meta) && input.shift && input.key.toLowerCase() === 'c') { // Ctrl+Shift+C/Cmd+Shift+C
+        event.preventDefault();
+      }
+    });
+  } 
   // 开发时打开开发者工具
-  if (process.argv.includes('--debug')) {
+  else if (process.argv.includes('--debug')) {
     mainWindow.webContents.openDevTools();
   }
 }
@@ -427,10 +445,26 @@ if (process.platform === 'win32') {
   app.setAppUserModelId('com.linbot.ui');
 }
 
+// 在生产环境中全局禁用开发者工具
+if (app.isPackaged) {
+  app.commandLine.appendSwitch('disable-site-isolation-trials');
+}
+
 app.whenReady().then(() => {
   console.log('应用准备就绪，正在创建窗口...');
   createWindow();
   console.log('主窗口已创建');
+  
+  // 在生产环境下禁用所有窗口的开发者工具
+  if (app.isPackaged) {
+    console.log('生产环境，禁用开发者工具');
+    // 全局禁用DevTools
+    app.on('browser-window-created', (event, win) => {
+      win.webContents.on('devtools-opened', () => {
+        win.webContents.closeDevTools();
+      });
+    });
+  }
 }).catch(error => {
   console.error('应用启动失败:', error);
 });

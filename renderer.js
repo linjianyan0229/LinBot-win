@@ -3,6 +3,7 @@
 
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
+const restartBtn = document.getElementById('restartBtn'); // 添加重启按钮引用
 const listenPortInput = document.getElementById('listenPort');
 const accessTokenInput = document.getElementById('accessToken');
 const statusBar = document.getElementById('status-bar');
@@ -37,6 +38,15 @@ const pluginStatus = document.getElementById('plugin-status');
 
 // 刷新机器人状态按钮
 const refreshBotStatusBtn = document.getElementById('refreshBotStatus');
+
+// 获取UI元素
+const groupJsonEditor = document.getElementById('groupJsonEditor');
+const groupJsonStatus = document.getElementById('groupJsonStatus');
+const loadGroupJsonBtn = document.getElementById('loadGroupJsonBtn');
+const saveGroupJsonBtn = document.getElementById('saveGroupJsonBtn');
+const editGroupJsonBtn = document.getElementById('editGroupJsonBtn');
+const cancelEditJsonBtn = document.getElementById('cancelEditJsonBtn');
+const groupJsonEditorContainer = document.getElementById('groupJsonEditorContainer');
 
 // --- 群聊管理功能 ---
 let groupConfig = { groups: {} };
@@ -453,6 +463,7 @@ function updateUIState(isRunning, port, clientConnected) {
     try {
         startBtn.disabled = isRunning;
         stopBtn.disabled = !isRunning;
+        restartBtn.disabled = !isRunning; // 更新重启按钮状态
         listenPortInput.disabled = isRunning;
         accessTokenInput.disabled = isRunning;
         
@@ -528,6 +539,35 @@ stopBtn.addEventListener('click', () => {
     }
 });
 
+// 添加重启服务器按钮的事件监听器
+restartBtn.addEventListener('click', async () => {
+    try {
+        addServerLog('尝试重启服务器...');
+        
+        // 先获取当前配置
+        const config = getConfig();
+        if (!config) {
+            addServerLog('无法获取配置，重启失败', 'error');
+            return;
+        }
+        
+        // 保存配置
+        await window.electronAPI.saveConfig(config);
+        
+        // 先停止服务器
+        await window.electronAPI.stopServer();
+        
+        // 短暂延迟后重新启动服务器
+        setTimeout(() => {
+            addServerLog(`正在重新启动服务器，端口: ${config.port}...`);
+            window.electronAPI.startServer(config);
+        }, 1000);
+    } catch (error) {
+        console.error('重启服务器失败:', error);
+        addServerLog(`重启服务器失败: ${error.message}`, 'error');
+    }
+});
+
 // 添加监听器，当复选框状态改变时保存配置
 showHeartbeatCheckbox.addEventListener('change', function() {
     showHeartbeatState = showHeartbeatCheckbox.checked;
@@ -581,6 +621,17 @@ async function loadGroupConfig() {
     try {
         groupConfig = await window.electronAPI.getGroupConfig();
         renderGroupList();
+        
+        // 只有当编辑器容器可见时才更新编辑器内容
+        if (groupJsonEditor && groupJsonEditorContainer && 
+            groupJsonEditorContainer.style.display !== 'none') {
+            const formattedJson = JSON.stringify(groupConfig, null, 2);
+            groupJsonEditor.value = formattedJson;
+            if (groupJsonStatus) {
+                groupJsonStatus.textContent = '配置已加载';
+                groupJsonStatus.style.color = 'var(--success-color)';
+            }
+        }
     } catch (error) {
         console.error('加载群组配置失败:', error);
     }
@@ -628,13 +679,6 @@ function renderGroupList() {
         // 操作
         const actionCell = document.createElement('td');
         
-        // 编辑按钮
-        const editBtn = document.createElement('button');
-        editBtn.className = 'action-btn edit-btn';
-        editBtn.textContent = '编辑';
-        editBtn.onclick = () => editGroup(group.id);
-        actionCell.appendChild(editBtn);
-        
         // 启用/禁用按钮
         const toggleBtn = document.createElement('button');
         toggleBtn.className = `action-btn toggle-btn ${group.enabled ? '' : 'disabled'}`;
@@ -642,11 +686,39 @@ function renderGroupList() {
         toggleBtn.onclick = () => toggleGroupStatus(group.id, !group.enabled);
         actionCell.appendChild(toggleBtn);
         
+        // 添加删除按钮
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'action-btn delete-btn';
+        deleteBtn.textContent = '删除';
+        deleteBtn.style.marginLeft = '8px';
+        deleteBtn.onclick = () => deleteGroup(group.id);
+        actionCell.appendChild(deleteBtn);
+        
         row.appendChild(actionCell);
         
         // 添加到表格
         groupTableBody.appendChild(row);
     });
+}
+
+function deleteGroup(groupId) {
+    // 确认删除
+    if (!confirm(`确定要删除群 ${groupId} 吗？此操作不可恢复。`)) {
+        return;
+    }
+    
+    // 从配置中移除群组
+    if (groupConfig.groups[groupId]) {
+        delete groupConfig.groups[groupId];
+        
+        // 保存配置并更新UI
+        window.electronAPI.saveGroupConfig(groupConfig);
+        renderGroupList();
+        
+        addServerLog(`已删除群 ${groupId}`, 'info');
+    } else {
+        addServerLog(`群 ${groupId} 不存在`, 'error');
+    }
 }
 
 function addGroup() {
@@ -1102,5 +1174,121 @@ async function initApi() {
     
     if (disableAllGroupsBtn) {
         disableAllGroupsBtn.addEventListener('click', disableAllGroups);
+    }
+    
+    // 添加group.json编辑器的事件监听
+    if (editGroupJsonBtn) {
+        editGroupJsonBtn.addEventListener('click', showGroupJsonEditor);
+    }
+    
+    if (cancelEditJsonBtn) {
+        cancelEditJsonBtn.addEventListener('click', hideGroupJsonEditor);
+    }
+    
+    if (loadGroupJsonBtn) {
+        loadGroupJsonBtn.addEventListener('click', loadGroupJsonToEditor);
+    }
+    
+    if (saveGroupJsonBtn) {
+        saveGroupJsonBtn.addEventListener('click', saveGroupJsonFromEditor);
+    }
+}
+
+// 直接加载group.json到编辑器
+async function loadGroupJsonToEditor() {
+    try {
+        groupJsonStatus.textContent = '正在加载配置...';
+        groupJsonStatus.style.color = 'var(--text-light)';
+        
+        // 从主进程获取群组配置
+        const config = await window.electronAPI.getGroupConfig();
+        
+        // 格式化成美观的JSON并显示在编辑器中
+        const formattedJson = JSON.stringify(config, null, 2);
+        groupJsonEditor.value = formattedJson;
+        
+        groupJsonStatus.textContent = '配置已加载';
+        groupJsonStatus.style.color = 'var(--success-color)';
+    } catch (error) {
+        console.error('加载群组配置失败:', error);
+        groupJsonStatus.textContent = `加载失败: ${error.message}`;
+        groupJsonStatus.style.color = 'var(--danger-color)';
+    }
+}
+
+// 保存编辑器中的内容到group.json
+async function saveGroupJsonFromEditor() {
+    try {
+        const jsonContent = groupJsonEditor.value.trim();
+        if (!jsonContent) {
+            groupJsonStatus.textContent = '配置内容不能为空';
+            groupJsonStatus.style.color = 'var(--danger-color)';
+            return;
+        }
+        
+        // 尝试解析JSON以验证格式是否正确
+        let parsedConfig;
+        try {
+            parsedConfig = JSON.parse(jsonContent);
+        } catch (parseError) {
+            groupJsonStatus.textContent = `JSON格式错误: ${parseError.message}`;
+            groupJsonStatus.style.color = 'var(--danger-color)';
+            return;
+        }
+        
+        // 确保groups属性存在
+        if (!parsedConfig.groups) {
+            parsedConfig.groups = {};
+        }
+        
+        // 保存配置
+        await window.electronAPI.saveGroupConfig(parsedConfig);
+        
+        // 更新全局配置变量
+        groupConfig = parsedConfig;
+        
+        // 更新UI
+        renderGroupList();
+        
+        groupJsonStatus.textContent = '配置已保存';
+        groupJsonStatus.style.color = 'var(--success-color)';
+        
+        addServerLog('群组配置已通过编辑器保存', 'info');
+        
+        // 保存成功后自动隐藏编辑器
+        setTimeout(() => {
+            hideGroupJsonEditor();
+        }, 1000); // 延迟1秒，让用户看到成功消息
+    } catch (error) {
+        console.error('保存群组配置失败:', error);
+        groupJsonStatus.textContent = `保存失败: ${error.message}`;
+        groupJsonStatus.style.color = 'var(--danger-color)';
+    }
+}
+
+// 显示编辑器
+function showGroupJsonEditor() {
+    // 加载最新配置到编辑器
+    loadGroupJsonToEditor().then(() => {
+        // 显示编辑器容器
+        if (groupJsonEditorContainer) {
+            groupJsonEditorContainer.style.display = 'block';
+        }
+        // 隐藏编辑按钮
+        if (editGroupJsonBtn) {
+            editGroupJsonBtn.style.display = 'none';
+        }
+    }).catch(error => {
+        addServerLog(`加载配置失败: ${error.message}`, 'error');
+    });
+}
+
+// 隐藏编辑器
+function hideGroupJsonEditor() {
+    if (groupJsonEditorContainer) {
+        groupJsonEditorContainer.style.display = 'none';
+    }
+    if (editGroupJsonBtn) {
+        editGroupJsonBtn.style.display = 'inline-block';
     }
 }

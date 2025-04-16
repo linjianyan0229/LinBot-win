@@ -2,6 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; object-src 'none';">
     <title>LinBot UI</title>
     <style>
         :root {
@@ -395,6 +396,15 @@
             background-color: var(--danger-hover);
         }
         
+        /* 添加删除按钮样式 */
+        .delete-btn {
+            background-color: var(--danger-color);
+        }
+        
+        .delete-btn:hover {
+            background-color: var(--danger-hover);
+        }
+        
         /* 插件相关样式 */
         .tip-box {
             background-color: var(--bg-color);
@@ -652,8 +662,11 @@
                         <input type="checkbox" id="showHeartbeat" checked>
                         <label for="showHeartbeat">显示心跳消息</label>
                     </div>
-                    <button id="startBtn">启动服务</button>
-                    <button id="stopBtn" class="stop" disabled>停止服务</button>
+                    <div style="display: flex; gap: 10px;">
+                        <button id="startBtn">启动服务</button>
+                        <button id="stopBtn" class="stop" disabled>停止服务</button>
+                        <button id="restartBtn" class="action-btn edit-btn" disabled>重启服务</button>
+                    </div>
                 </div>
                 
                 <div id="status-bar" class="status-bar stopped">
@@ -719,6 +732,31 @@
             <!-- 群聊管理页面 -->
             <div id="group-management-page" class="page-container">
                 <h2 class="page-title">群聊管理</h2>
+                
+                <!-- 添加编辑配置的部分 -->
+                <div class="section-container">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3 style="margin: 0;">群聊配置管理</h3>
+                        <button id="editGroupJsonBtn" class="action-btn edit-btn">编辑配置文件</button>
+                    </div>
+                    
+                    <!-- 编辑配置的容器，默认隐藏 -->
+                    <div id="groupJsonEditorContainer" style="display: none;">
+                        <div style="margin-bottom: 15px;">
+                            <textarea id="groupJsonEditor" style="width: 100%; height: 200px; font-family: monospace; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);" spellcheck="false"></textarea>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <div>
+                                <span id="groupJsonStatus" style="color: var(--text-light); font-size: 0.9em;">加载配置...</span>
+                            </div>
+                            <div>
+                                <button id="cancelEditJsonBtn" class="action-btn">取消</button>
+                                <button id="loadGroupJsonBtn" class="action-btn edit-btn">重新加载</button>
+                                <button id="saveGroupJsonBtn" class="action-btn">保存配置</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 
                 <div class="group-manager-header">
                     <div class="group-actions">
