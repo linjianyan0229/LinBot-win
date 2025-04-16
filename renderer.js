@@ -344,7 +344,8 @@ function updateBotInfo(data) {
 // 获取机器人状态信息
 async function fetchBotStatus() {
     try {
-        if (!window.serverRunning) {
+        const serverStatus = window.serverStatus;
+        if (!serverStatus || !serverStatus.isRunning) {
             addServerLog('服务器未运行，无法获取机器人状态', 'error');
             return;
         }
@@ -399,6 +400,9 @@ function initializeListeners() {
     });
 
     window.electronAPI.onServerStatusUpdate((status) => {
+        // 保存状态到全局变量，供其他函数使用
+        window.serverStatus = status;
+        
         updateUIState(status.isRunning, status.port, status.clientConnected);
         
         // 当服务器状态变为运行时，尝试获取机器人信息
@@ -408,6 +412,9 @@ function initializeListeners() {
                 fetchBotStatus();
             }, 2000);
         }
+        
+        // 更新插件状态
+        updatePluginStatus();
     });
 
     window.electronAPI.onWsMessage((message) => {
@@ -449,10 +456,6 @@ function updateUIState(isRunning, port, clientConnected) {
         listenPortInput.disabled = isRunning;
         accessTokenInput.disabled = isRunning;
         
-        // 保存服务器状态到全局变量，供其他函数使用
-        window.serverRunning = isRunning;
-        window.clientConnected = clientConnected;
-        
         // 更新状态栏
         if (statusBar) {
             if (isRunning) {
@@ -488,9 +491,6 @@ function updateUIState(isRunning, port, clientConnected) {
                 }
             }
         }
-        
-        // 更新插件状态
-        updatePluginStatus();
     } catch (error) {
         console.error('更新UI状态失败:', error);
     }
@@ -725,6 +725,12 @@ async function fetchGroupList() {
     try {
         addServerLog('正在获取机器人群聊列表...', 'info');
         
+        const serverStatus = window.serverStatus;
+        if (!serverStatus || !serverStatus.isRunning) {
+            addServerLog('服务器未运行，无法获取群聊列表', 'error');
+            return;
+        }
+        
         // 获取API对象
         const api = getApi();
         if (!api) {
@@ -850,6 +856,12 @@ function initializePageSwitcher() {
             const targetPage = document.getElementById(targetPageId);
             if (targetPage) {
                 targetPage.classList.add('active');
+                
+                // 如果切换到插件管理页面，更新插件状态
+                if (targetPageId === 'plugin-management-page') {
+                    console.log('切换到插件管理页面，触发插件状态更新');
+                    updatePluginStatus();
+                }
             } else {
                 console.error(`找不到页面: ${targetPageId}`);
             }
@@ -859,6 +871,13 @@ function initializePageSwitcher() {
 
 // 初始化页面
 document.addEventListener('DOMContentLoaded', function() {
+    // 初始化服务器状态对象
+    window.serverStatus = {
+        isRunning: false,
+        port: null,
+        clientConnected: false
+    };
+    
     // 加载配置
     loadConfig().catch(error => {
         console.error('加载配置失败:', error);
@@ -874,95 +893,118 @@ document.addEventListener('DOMContentLoaded', function() {
     loadGroupConfig().catch(error => {
         console.error('加载群组配置失败:', error);
     });
+    
+    // 初始显示插件状态
+    setTimeout(() => {
+        updatePluginStatus();
+    }, 500);
 });
 
 // 更新插件状态
 async function updatePluginStatus() {
     try {
-        if (!pluginStatus) {
-            console.error('找不到插件状态元素');
+        const pluginStatusBar = document.getElementById('plugin-status-bar');
+        const pluginStatus = document.getElementById('plugin-status');
+        const pluginGroupsContainer = document.getElementById('pluginGroupsContainer');
+        
+        console.log('开始更新插件状态，当前服务器状态:', window.serverStatus);
+        
+        if (!pluginStatusBar || !pluginStatus || !pluginGroupsContainer) {
+            console.error('找不到插件状态相关DOM元素');
             return;
         }
         
         // 检查服务器状态
-        if (!window.serverRunning) {
+        const serverStatus = window.serverStatus;
+        const isRunning = serverStatus && serverStatus.isRunning;
+        
+        console.log(`服务器运行状态: ${isRunning}`);
+        
+        if (isRunning) {
+            pluginStatusBar.className = 'status-bar running';
+            pluginStatus.textContent = '服务器已启动，插件系统已激活';
+            
+            // 获取插件列表
+            try {
+                console.log('尝试获取插件列表...');
+                const result = await window.electronAPI.getPlugins();
+                console.log('获取插件列表结果:', result);
+                
+                if (result.error) {
+                    console.error('获取插件列表出错:', result.error);
+                    pluginGroupsContainer.innerHTML = `<div class="plugin-empty">${result.error}</div>`;
+                    return;
+                }
+                
+                if (!result.plugins || result.plugins.length === 0) {
+                    console.log('没有找到已加载的插件');
+                    pluginGroupsContainer.innerHTML = '<div class="plugin-empty">没有找到已加载的插件</div>';
+                    return;
+                }
+                
+                console.log(`找到 ${result.plugins.length} 个插件:`, result.plugins);
+                
+                // 按照目录分组插件
+                const groupedPlugins = {};
+                
+                result.plugins.forEach(plugin => {
+                    // 从路径中提取分组名称
+                    const group = plugin.group || '默认';
+                    
+                    if (!groupedPlugins[group]) {
+                        groupedPlugins[group] = [];
+                    }
+                    
+                    groupedPlugins[group].push(plugin);
+                });
+                
+                console.log('插件分组结果:', groupedPlugins);
+                
+                // 清空加载提示
+                pluginGroupsContainer.innerHTML = '';
+                
+                // 按分组渲染插件
+                Object.keys(groupedPlugins).forEach(group => {
+                    const plugins = groupedPlugins[group];
+                    const groupElement = document.createElement('div');
+                    groupElement.className = 'plugin-group';
+                    
+                    groupElement.innerHTML = `
+                        <div class="plugin-group-header">
+                            <h4 class="plugin-group-name">
+                                ${group} 
+                                <span class="plugin-group-badge">${plugins.length}</span>
+                            </h4>
+                        </div>
+                        <div class="plugin-list">
+                            ${plugins.map(plugin => `
+                                <div class="plugin-card">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <h5 class="plugin-name">${plugin.name}</h5>
+                                        <span class="plugin-status plugin-status-${plugin.status.toLowerCase()}">${plugin.status}</span>
+                                    </div>
+                                    <p class="plugin-description">${plugin.description}</p>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                    
+                    pluginGroupsContainer.appendChild(groupElement);
+                });
+                
+                console.log('完成插件渲染');
+                
+            } catch (error) {
+                console.error('获取插件列表失败:', error);
+                pluginGroupsContainer.innerHTML = `<div class="plugin-empty">加载插件时出错: ${error.message}</div>`;
+            }
+        } else {
+            console.log('服务器未运行，不加载插件');
+            pluginStatusBar.className = 'status-bar stopped';
             pluginStatus.textContent = '服务器未运行，无法使用插件功能';
-            pluginStatus.style.color = '#721c24';
-            return;
+            pluginGroupsContainer.innerHTML = '<div class="plugin-empty">请先启动服务器来查看已加载的插件</div>';
         }
-        
-        // 获取插件列表
-        const result = await window.electronAPI.getPlugins();
-        
-        if (result.error) {
-            pluginStatus.textContent = result.error;
-            pluginStatus.style.color = '#721c24';
-            return;
-        }
-        
-        // 更新状态文本
-        pluginStatus.textContent = `已加载 ${result.count} 个插件`;
-        pluginStatus.style.color = '#155724';
-        
-        // 更新插件表格
-        updatePluginTable(result.plugins);
     } catch (error) {
-        console.error('更新插件状态失败:', error);
-        if (pluginStatus) {
-            pluginStatus.textContent = `获取插件信息出错: ${error.message}`;
-            pluginStatus.style.color = '#721c24';
-        }
-    }
-}
-
-// 更新插件表格
-function updatePluginTable(plugins) {
-    try {
-        if (!pluginTableBody) {
-            console.error('找不到插件表格元素');
-            return;
-        }
-        
-        // 清空现有内容
-        pluginTableBody.innerHTML = '';
-        
-        if (!plugins || plugins.length === 0) {
-            const row = document.createElement('tr');
-            const cell = document.createElement('td');
-            cell.colSpan = 3;
-            cell.textContent = '没有加载任何插件';
-            cell.style.textAlign = 'center';
-            row.appendChild(cell);
-            pluginTableBody.appendChild(row);
-            return;
-        }
-        
-        // 添加每个插件的行
-        plugins.forEach(plugin => {
-            const row = document.createElement('tr');
-            
-            // 插件名称
-            const nameCell = document.createElement('td');
-            nameCell.textContent = plugin.name;
-            row.appendChild(nameCell);
-            
-            // 插件描述
-            const descCell = document.createElement('td');
-            descCell.textContent = plugin.description;
-            row.appendChild(descCell);
-            
-            // 插件状态
-            const statusCell = document.createElement('td');
-            const statusSpan = document.createElement('span');
-            statusSpan.textContent = plugin.status === 'active' ? '已启用' : '已禁用';
-            statusSpan.className = plugin.status === 'active' ? 'status-enabled' : 'status-disabled';
-            statusCell.appendChild(statusSpan);
-            row.appendChild(statusCell);
-            
-            // 添加到表格
-            pluginTableBody.appendChild(row);
-        });
-    } catch (error) {
-        console.error('更新插件表格失败:', error);
+        console.error('更新插件状态出错:', error);
     }
 }

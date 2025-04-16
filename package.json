@@ -1,6 +1,6 @@
 {
   "name": "linbot-ui",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "OneBot反向WebSocket客户端",
   "main": "main.js",
   "scripts": {

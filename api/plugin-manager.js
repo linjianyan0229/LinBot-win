@@ -47,26 +47,7 @@ class PluginManager {
 
             // 逐个加载插件
             for (const filePath of pluginFiles) {
-                try {
-                    const relativePath = path.relative(pluginsDir, filePath);
-                    this.log(`正在加载插件: ${relativePath}`);
-                    
-                    // 删除缓存，确保重新加载最新版本
-                    delete require.cache[require.resolve(filePath)];
-                    
-                    // 加载插件模块
-                    const PluginClass = require(filePath);
-                    
-                    // 实例化插件并注册
-                    const plugin = new PluginClass(this.client);
-                    
-                    // 注册插件
-                    await this.registerPlugin(plugin);
-                    
-                    this.log(`插件加载成功: ${plugin.name || relativePath}`);
-                } catch (error) {
-                    this.log(`加载插件 ${filePath} 失败: ${error.message}`, 'error');
-                }
+                await this.loadPlugin(filePath, pluginsDir);
             }
             
             this.log(`插件加载完成，共加载 ${this.plugins.size} 个插件`);
@@ -142,6 +123,39 @@ class PluginManager {
             return true;
         } catch (error) {
             this.log(`注册插件失败: ${error.message}`, 'error');
+            return false;
+        }
+    }
+
+    /**
+     * 加载单个插件
+     * @param {string} filePath 插件文件路径
+     * @returns {boolean} 是否成功加载
+     */
+    async loadPlugin(filePath, pluginsDir) {
+        try {
+            const relativePath = path.relative(pluginsDir, filePath);
+            this.log(`正在加载插件: ${relativePath}`);
+            
+            // 删除缓存，确保重新加载最新版本
+            delete require.cache[require.resolve(filePath)];
+            
+            // 加载插件模块
+            const PluginClass = require(filePath);
+            
+            // 实例化插件并注册
+            const plugin = new PluginClass(this.client);
+            
+            // 保存插件文件路径，用于分组显示
+            plugin.filePath = filePath;
+            
+            // 注册插件
+            await this.registerPlugin(plugin);
+            
+            this.log(`插件加载成功: ${plugin.name || relativePath}`);
+            return true;
+        } catch (error) {
+            this.log(`加载插件 ${filePath} 失败: ${error.message}`, 'error');
             return false;
         }
     }
