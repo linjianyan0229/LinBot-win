@@ -668,7 +668,7 @@ function addGroup() {
     const newGroup = {
         id: groupId,
         name: `群 ${groupId}`,
-        enabled: true
+        enabled: false // 默认禁用
     };
     
     // 添加到配置并保存
@@ -679,7 +679,7 @@ function addGroup() {
     renderGroupList();
     groupIdInput.value = ''; // 清空输入框
     
-    addServerLog(`已添加群聊: ${groupId}`, 'info');
+    addServerLog(`已添加群聊: ${groupId} [已禁用]`, 'info');
 }
 
 function editGroup(groupId) {
@@ -787,18 +787,18 @@ function processGroupList(groups) {
             
             // 检查群是否已存在
             if (groupConfig.groups[groupId]) {
-                // 更新已存在的群信息
+                // 更新已存在的群信息，但不改变其启用状态
                 groupConfig.groups[groupId].name = group.group_name || `群 ${groupId}`;
                 addServerLog(`更新群信息: ${groupId} (${group.group_name})`, 'info');
             } else {
-                // 添加新群
+                // 添加新群，默认禁用
                 groupConfig.groups[groupId] = {
                     id: groupId,
                     name: group.group_name || `群 ${groupId}`,
-                    enabled: true
+                    enabled: false
                 };
                 addedCount++;
-                addServerLog(`添加新群: ${groupId} (${group.group_name})`, 'info');
+                addServerLog(`添加新群: ${groupId} (${group.group_name}) [已禁用]`, 'info');
             }
         });
         
@@ -829,6 +829,72 @@ window.electronAPI.onGroupInfoUpdated((groupInfo) => {
         renderGroupList();
     }
 });
+
+// 全部启用群聊
+function enableAllGroups() {
+    if (!groupConfig || !groupConfig.groups) return;
+    
+    const groupIds = Object.keys(groupConfig.groups);
+    if (groupIds.length === 0) {
+        addServerLog('没有可启用的群聊', 'info');
+        return;
+    }
+    
+    // 修改所有群聊的启用状态
+    let count = 0;
+    groupIds.forEach(groupId => {
+        if (!groupConfig.groups[groupId].enabled) {
+            groupConfig.groups[groupId].enabled = true;
+            count++;
+        }
+    });
+    
+    // 保存配置并更新UI
+    window.electronAPI.saveGroupConfig(groupConfig);
+    renderGroupList();
+    
+    addServerLog(`已启用全部群聊，共 ${count} 个群被修改`, 'info');
+}
+
+// 全部禁用群聊
+function disableAllGroups() {
+    if (!groupConfig || !groupConfig.groups) return;
+    
+    const groupIds = Object.keys(groupConfig.groups);
+    if (groupIds.length === 0) {
+        addServerLog('没有可禁用的群聊', 'info');
+        return;
+    }
+    
+    // 修改所有群聊的启用状态
+    let count = 0;
+    groupIds.forEach(groupId => {
+        if (groupConfig.groups[groupId].enabled) {
+            groupConfig.groups[groupId].enabled = false;
+            count++;
+        }
+    });
+    
+    // 保存配置并更新UI
+    window.electronAPI.saveGroupConfig(groupConfig);
+    renderGroupList();
+    
+    addServerLog(`已禁用全部群聊，共 ${count} 个群被修改`, 'info');
+}
+
+// 初始化群聊管理页面
+function initGroupManagementPage() {
+    // ... existing code ...
+    
+    // 添加全部启用/禁用按钮事件
+    const enableAllGroupsBtn = document.getElementById('enableAllGroupsBtn');
+    const disableAllGroupsBtn = document.getElementById('disableAllGroupsBtn');
+    
+    enableAllGroupsBtn.addEventListener('click', enableAllGroups);
+    disableAllGroupsBtn.addEventListener('click', disableAllGroups);
+    
+    // ... existing code ...
+}
 
 // 页面切换功能
 function initializePageSwitcher() {
@@ -889,9 +955,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // 初始化其他监听器
     initializeListeners();
     
-    // 加载群组配置
-    loadGroupConfig().catch(error => {
-        console.error('加载群组配置失败:', error);
+    // 初始化API相关功能
+    initApi().catch(error => {
+        console.error('初始化API相关功能失败:', error);
     });
     
     // 初始显示插件状态
@@ -1006,5 +1072,35 @@ async function updatePluginStatus() {
         }
     } catch (error) {
         console.error('更新插件状态出错:', error);
+    }
+}
+
+// 初始化API相关功能
+async function initApi() {
+    // 加载群组配置
+    await loadGroupConfig();
+    
+    // 获取群聊列表按钮绑定事件
+    getGroupListBtn.addEventListener('click', fetchGroupList);
+    
+    // 绑定添加群聊按钮事件
+    addGroupBtn.addEventListener('click', addGroup);
+    
+    // 刷新群列表按钮事件
+    refreshGroupsBtn.addEventListener('click', () => {
+        loadGroupConfig();
+        addServerLog('已刷新群列表', 'info');
+    });
+    
+    // 添加全部启用/禁用按钮事件
+    const enableAllGroupsBtn = document.getElementById('enableAllGroupsBtn');
+    const disableAllGroupsBtn = document.getElementById('disableAllGroupsBtn');
+    
+    if (enableAllGroupsBtn) {
+        enableAllGroupsBtn.addEventListener('click', enableAllGroups);
+    }
+    
+    if (disableAllGroupsBtn) {
+        disableAllGroupsBtn.addEventListener('click', disableAllGroups);
     }
 }
