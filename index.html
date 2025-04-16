@@ -2,6 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; object-src 'none';">
     <title>LinBot UI</title>
     <style>
         :root {
@@ -395,6 +396,15 @@
             background-color: var(--danger-hover);
         }
         
+        /* 添加删除按钮样式 */
+        .delete-btn {
+            background-color: var(--danger-color);
+        }
+        
+        .delete-btn:hover {
+            background-color: var(--danger-hover);
+        }
+        
         /* 插件相关样式 */
         .tip-box {
             background-color: var(--bg-color);
@@ -617,6 +627,109 @@
             color: var(--text-light);
             font-style: italic;
         }
+        
+        /* 插件商店样式 */
+        .plugin-store-item {
+            background-color: var(--bg-color);
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-left: 4px solid var(--primary-color);
+            transition: all 0.3s ease;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .plugin-store-item:hover {
+            box-shadow: 0 2px 8px var(--shadow-color);
+            transform: translateY(-2px);
+        }
+        
+        .plugin-store-info {
+            flex: 1;
+        }
+        
+        .plugin-store-name {
+            font-weight: 600;
+            margin: 0 0 5px 0;
+            color: var(--dark-color);
+        }
+        
+        .plugin-store-description {
+            color: var(--text-light);
+            margin: 0;
+            font-size: 0.9em;
+        }
+        
+        .plugin-store-meta {
+            display: flex;
+            align-items: center;
+            margin-top: 8px;
+            font-size: 0.85em;
+            color: var(--text-light);
+        }
+        
+        .plugin-store-meta span {
+            margin-right: 15px;
+            display: flex;
+            align-items: center;
+        }
+        
+        .plugin-store-meta svg {
+            width: 14px;
+            height: 14px;
+            margin-right: 4px;
+        }
+        
+        .plugin-store-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .install-btn {
+            background-color: var(--success-color);
+        }
+        
+        .install-btn:hover {
+            background-color: var(--success-hover);
+        }
+        
+        .installed-badge {
+            background-color: var(--light-color);
+            color: var(--text-color);
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        
+        .plugin-type-badge {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: normal;
+            margin-left: 8px;
+        }
+        
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(0,0,0,0.1);
+            border-radius: 50%;
+            border-top-color: var(--primary-color);
+            animation: spinner 1s ease-in-out infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        
+        @keyframes spinner {
+            to {transform: rotate(360deg);}
+        }
     </style>
 </head>
 <body>
@@ -652,8 +765,11 @@
                         <input type="checkbox" id="showHeartbeat" checked>
                         <label for="showHeartbeat">显示心跳消息</label>
                     </div>
-                    <button id="startBtn">启动服务</button>
-                    <button id="stopBtn" class="stop" disabled>停止服务</button>
+                    <div style="display: flex; gap: 10px;">
+                        <button id="startBtn">启动服务</button>
+                        <button id="stopBtn" class="stop" disabled>停止服务</button>
+                        <button id="restartBtn" class="action-btn edit-btn" disabled>重启服务</button>
+                    </div>
                 </div>
                 
                 <div id="status-bar" class="status-bar stopped">
@@ -720,12 +836,39 @@
             <div id="group-management-page" class="page-container">
                 <h2 class="page-title">群聊管理</h2>
                 
+                <!-- 添加编辑配置的部分 -->
+                <div class="section-container">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3 style="margin: 0;">群聊配置管理</h3>
+                        <button id="editGroupJsonBtn" class="action-btn edit-btn">编辑配置文件</button>
+                    </div>
+                    
+                    <!-- 编辑配置的容器，默认隐藏 -->
+                    <div id="groupJsonEditorContainer" style="display: none;">
+                        <div style="margin-bottom: 15px;">
+                            <textarea id="groupJsonEditor" style="width: 100%; height: 200px; font-family: monospace; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);" spellcheck="false"></textarea>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <div>
+                                <span id="groupJsonStatus" style="color: var(--text-light); font-size: 0.9em;">加载配置...</span>
+                            </div>
+                            <div>
+                                <button id="cancelEditJsonBtn" class="action-btn">取消</button>
+                                <button id="loadGroupJsonBtn" class="action-btn edit-btn">重新加载</button>
+                                <button id="saveGroupJsonBtn" class="action-btn">保存配置</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="group-manager-header">
                     <div class="group-actions">
                         <input type="text" id="groupIdInput" placeholder="输入群号">
                         <button id="addGroupBtn">添加群聊</button>
                         <button id="refreshGroupsBtn">刷新列表</button>
                         <button id="getGroupListBtn">获取群聊列表</button>
+                        <button id="enableAllGroupsBtn" class="toggle-btn">全部启用</button>
+                        <button id="disableAllGroupsBtn" class="toggle-btn disabled">全部禁用</button>
                     </div>
                 </div>
                 
@@ -756,12 +899,20 @@
                 <div class="section-container">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                         <h3 style="margin: 0;">已加载插件</h3>
-                        <a href="https://github.com/linjianyan0229/linbot-plugins" target="_blank" class="repo-btn">
-                            <svg style="width: 16px; height: 16px; margin-right: 6px; vertical-align: middle;" viewBox="0 0 16 16" fill="currentColor">
-                                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
-                            </svg>
-                            插件仓库
-                        </a>
+                        <div style="display: flex;">
+                            <button id="openPluginStoreBtn" class="action-btn edit-btn">
+                                <svg style="width: 16px; height: 16px; margin-right: 6px; vertical-align: middle;" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M19 8h-1V6c0-2.8-2.2-5-5-5S8 3.2 8 6v2H7c-1.7 0-3 1.3-3 3v8c0 1.7 1.3 3 3 3h12c1.7 0 3-1.3 3-3v-8c0-1.7-1.3-3-3-3zM9 6c0-2.2 1.8-4 4-4s4 1.8 4 4v2H9V6zm4 12c-1.7 0-3-1.3-3-3s1.3-3 3-3 3 1.3 3 3-1.3 3-3 3z"></path>
+                                </svg>
+                                插件商店
+                            </button>
+                            <a href="https://github.com/linjianyan0229/linbot-plugins" target="_blank" class="repo-btn">
+                                <svg style="width: 16px; height: 16px; margin-right: 6px; vertical-align: middle;" viewBox="0 0 16 16" fill="currentColor">
+                                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+                                </svg>
+                                插件仓库
+                            </a>
+                        </div>
                     </div>
                     
                     <!-- 插件分组容器 -->
@@ -773,6 +924,34 @@
                     <div class="tip-box">
                         <p>提示: 插件文件位于程序目录下的plugins文件夹中，插件会按照子文件夹分组显示。</p>
                         <p>重启服务器可以重新加载插件。</p>
+                    </div>
+                </div>
+                
+                <!-- 插件商店页面（默认隐藏） -->
+                <div id="plugin-store-container" style="display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h3 style="margin: 0;">插件商店</h3>
+                        <button id="closePluginStoreBtn" class="action-btn">返回</button>
+                    </div>
+                    
+                    <div class="status-bar" id="store-status-bar">
+                        <span id="store-status">正在获取插件商店数据...</span>
+                    </div>
+                    
+                    <div class="section-container">
+                        <div class="plugin-store-filter" style="margin-bottom: 15px;">
+                            <input type="text" id="pluginSearchInput" placeholder="搜索插件..." style="width: 200px; padding: 8px;">
+                            <select id="pluginTypeFilter" style="padding: 8px; margin-left: 10px;">
+                                <option value="all">全部插件</option>
+                                <option value="群聊+私聊插件">群聊+私聊插件</option>
+                                <option value="群聊插件">仅群聊插件</option>
+                            </select>
+                            <button id="refreshStoreBtn" class="action-btn" style="margin-left: 10px;">刷新</button>
+                        </div>
+                        
+                        <div id="storePluginsContainer">
+                            <div class="plugin-loading">正在加载插件商店数据...</div>
+                        </div>
                     </div>
                 </div>
             </div>
