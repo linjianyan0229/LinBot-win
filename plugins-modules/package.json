@@ -1,0 +1,8 @@
+{
+  "name": "linbot-plugins-modules",
+  "version": "1.0.0",
+  "description": "LinBot Plugins Modules",
+  "dependencies": {
+    "axios": "^1.8.4"
+  }
+} 

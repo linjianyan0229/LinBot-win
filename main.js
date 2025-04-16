@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs'); // 引入 fs 模块
 const WebSocketServer = require('ws').Server; // 引入ws服务端
 const PluginManager = require('./api/plugin-manager'); // 引入插件管理器
+const Module = require('module'); // 引入Module模块
 
 // 定义配置文件的路径，区分开发环境和生产环境
 const isProduction = !process.defaultApp;
@@ -11,6 +12,16 @@ let basePath = __dirname;
 // 如果是打包后的应用，配置文件在extraResources目录
 if (isProduction) {
   basePath = process.resourcesPath;
+  
+  // 添加额外的模块解析路径，使插件能够访问安装在resources/node_modules的依赖
+  const resourcesNodeModulesPath = path.join(process.resourcesPath, 'node_modules');
+  if (fs.existsSync(resourcesNodeModulesPath)) {
+    console.log(`添加额外的模块解析路径: ${resourcesNodeModulesPath}`);
+    // 将resources/node_modules添加到模块解析路径
+    Module.globalPaths.push(resourcesNodeModulesPath);
+  } else {
+    console.warn(`资源目录下的node_modules不存在: ${resourcesNodeModulesPath}`);
+  }
 }
 
 // 配置文件路径
