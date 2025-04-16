@@ -65,6 +65,10 @@
       {
         "from": "./group.json",
         "to": "group.json"
+      },
+      {
+        "from": "./plugins-modules/node_modules",
+        "to": "node_modules"
       }
     ]
   }
