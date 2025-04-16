@@ -3,12 +3,12 @@
     "707972378": {
       "id": "707972378",
       "name": "修仙",
-      "enabled": false
+      "enabled": true
     },
     "1022448297": {
       "id": "1022448297",
       "name": "小旭机器人官方群",
-      "enabled": false
+      "enabled": true
     }
   }
 }

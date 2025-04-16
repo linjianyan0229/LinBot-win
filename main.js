@@ -4,6 +4,7 @@ const fs = require('fs'); // 引入 fs 模块
 const WebSocketServer = require('ws').Server; // 引入ws服务端
 const PluginManager = require('./api/plugin-manager'); // 引入插件管理器
 const Module = require('module'); // 引入Module模块
+const https = require('https'); // 引入https模块，用于GitHub API请求
 
 // 定义配置文件的路径，区分开发环境和生产环境
 const isProduction = !process.defaultApp;
@@ -45,6 +46,372 @@ let pluginManager = null; // 插件管理器实例
 
 // 用于存储API请求和响应的映射
 const apiRequests = new Map();
+
+// 从GitHub API获取数据
+async function fetchFromGitHub(endpoint) {
+    try {
+        // 获取系统代理设置
+        const httpProxy = process.env.HTTP_PROXY || process.env.http_proxy;
+        
+        // 创建请求选项
+        const options = {
+            hostname: 'api.github.com',
+            path: endpoint,
+            method: 'GET',
+            headers: {
+                'User-Agent': 'LinBot-Plugin-Manager',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+        };
+        
+        return new Promise((resolve, reject) => {
+            let req;
+            
+            if (httpProxy) {
+                // 使用代理
+                const HttpsProxyAgent = require('https-proxy-agent');
+                const agent = new HttpsProxyAgent(httpProxy);
+                options.agent = agent;
+                req = https.request(options, (res) => handleResponse(res, resolve, reject));
+            } else {
+                // 直接请求
+                req = https.request(options, (res) => handleResponse(res, resolve, reject));
+            }
+            
+            req.on('error', (error) => {
+                console.error(`GitHub API请求错误: ${error.message}`);
+                reject(error);
+            });
+            
+            req.end();
+        });
+    } catch (error) {
+        console.error(`请求GitHub API时出错: ${error.message}`);
+        throw error;
+    }
+}
+
+// 处理GitHub API响应
+function handleResponse(res, resolve, reject) {
+    if (res.statusCode !== 200) {
+        reject(new Error(`GitHub API请求失败: ${res.statusCode} ${res.statusMessage}`));
+        return;
+    }
+    
+    let data = '';
+    res.on('data', (chunk) => {
+        data += chunk;
+    });
+    
+    res.on('end', () => {
+        try {
+            const jsonData = JSON.parse(data);
+            resolve(jsonData);
+        } catch (error) {
+            reject(new Error(`解析GitHub API响应时出错: ${error.message}`));
+        }
+    });
+}
+
+// 从GitHub下载插件文件
+async function downloadPluginFile(downloadUrl, targetPath) {
+    try {
+        // 确保目标目录存在
+        const targetDir = path.dirname(targetPath);
+        await fs.promises.mkdir(targetDir, { recursive: true });
+        
+        // 获取系统代理设置
+        const httpProxy = process.env.HTTP_PROXY || process.env.http_proxy;
+        
+        return new Promise((resolve, reject) => {
+            // 使用代理或直接下载
+            let req;
+            
+            if (httpProxy) {
+                // 使用代理下载
+                const HttpsProxyAgent = require('https-proxy-agent');
+                const agent = new HttpsProxyAgent(httpProxy);
+                req = https.get(downloadUrl, { agent, headers: { 'User-Agent': 'LinBot-Plugin-Manager' } }, (res) => {
+                    handleDownload(res, targetPath, resolve, reject);
+                });
+            } else {
+                // 直接下载
+                req = https.get(downloadUrl, { headers: { 'User-Agent': 'LinBot-Plugin-Manager' } }, (res) => {
+                    handleDownload(res, targetPath, resolve, reject);
+                });
+            }
+            
+            req.on('error', (error) => {
+                console.error(`下载文件失败: ${error.message}`);
+                reject(error);
+            });
+        });
+    } catch (error) {
+        console.error(`下载文件时出错: ${error.message}`);
+        throw error;
+    }
+}
+
+// 处理文件下载
+function handleDownload(res, targetPath, resolve, reject) {
+    if (res.statusCode !== 200) {
+        reject(new Error(`下载失败: ${res.statusCode} ${res.statusMessage}`));
+        return;
+    }
+    
+    const fileStream = fs.createWriteStream(targetPath);
+    res.pipe(fileStream);
+    
+    fileStream.on('finish', () => {
+        fileStream.close();
+        resolve({ success: true, path: targetPath });
+    });
+    
+    fileStream.on('error', (error) => {
+        fs.unlink(targetPath, () => {});
+        reject(error);
+    });
+}
+
+// 获取插件仓库内容
+async function getPluginStoreContent() {
+  try {
+    console.log('正在获取插件仓库内容...');
+    
+    // 获取仓库根目录内容
+    const rootContent = await fetchFromGitHub('/repos/linjianyan0229/linbot-plugins/contents');
+    
+    // 查找群聊和私聊插件目录
+    const pluginDirs = rootContent.filter(item => 
+      item.type === 'dir' && 
+      (item.name === '群聊插件' || item.name === '群聊+私聊插件')
+    );
+    
+    // 获取每个插件目录的内容
+    const pluginsList = [];
+    
+    for (const dir of pluginDirs) {
+      const dirContent = await fetchFromGitHub(`/repos/linjianyan0229/linbot-plugins/contents/${encodeURIComponent(dir.path)}`);
+      
+      // 检查是否是空目录
+      if (!Array.isArray(dirContent) || dirContent.length === 0) {
+        continue;
+      }
+      
+      // 遍历目录中的插件
+      for (const item of dirContent) {
+        if (item.type === 'dir') {
+          try {
+            // 获取插件目录中的文件
+            const pluginFiles = await fetchFromGitHub(`/repos/linjianyan0229/linbot-plugins/contents/${encodeURIComponent(item.path)}`);
+            
+            // 检查插件目录是否包含.js文件
+            const jsFiles = pluginFiles.filter(file => file.name.endsWith('.js'));
+            const readmeFile = pluginFiles.find(file => file.name.toLowerCase() === 'readme.md');
+            
+            // 如果有JS文件，则认为是有效插件
+            if (jsFiles.length > 0) {
+              // 尝试从readme提取描述
+              let description = '无描述信息';
+              if (readmeFile) {
+                try {
+                  const readmeContent = await fetchFromGitHub(`/repos/linjianyan0229/linbot-plugins/contents/${encodeURIComponent(readmeFile.path)}`);
+                  const decodedContent = Buffer.from(readmeContent.content, 'base64').toString('utf8');
+                  // 提取第一行作为描述
+                  const firstLine = decodedContent.split('\n')[0].replace(/^#\s*/, '').trim();
+                  if (firstLine) {
+                    description = firstLine;
+                  }
+                } catch (readmeError) {
+                  console.error(`获取README失败: ${readmeError.message}`);
+                }
+              }
+              
+              pluginsList.push({
+                name: item.name,
+                path: item.path,
+                type: dir.name,
+                files: jsFiles.map(file => ({
+                  name: file.name,
+                  path: file.path,
+                  download_url: file.download_url
+                })),
+                description: description,
+                last_updated: new Date().toISOString() // GitHub API不直接提供最后更新时间
+              });
+            }
+          } catch (subError) {
+            console.error(`获取插件 ${item.name} 详情失败: ${subError.message}`);
+          }
+        }
+      }
+    }
+    
+    return {
+      success: true,
+      plugins: pluginsList,
+      count: pluginsList.length,
+      fetched_at: new Date().toISOString()
+    };
+    
+  } catch (error) {
+    console.error('获取插件商店数据失败:', error);
+    return {
+      success: false,
+      error: `获取插件商店数据失败: ${error.message}`
+    };
+  }
+}
+
+// 使用CDN替代下载
+function getAlternativeDownloadUrl(originalUrl) {
+  // 尝试使用几个可能的GitHub镜像
+  const mirrors = [
+    { 
+      from: 'https://raw.githubusercontent.com', 
+      to: 'https://raw.staticdn.net' 
+    },
+    { 
+      from: 'https://raw.githubusercontent.com', 
+      to: 'https://cdn.jsdelivr.net/gh' 
+    },
+    { 
+      from: 'https://raw.githubusercontent.com', 
+      to: 'https://ghproxy.com/https://raw.githubusercontent.com' 
+    }
+  ];
+  
+  // 生成备选下载链接
+  const alternativeUrls = [];
+  
+  // 原始URL保持不变
+  alternativeUrls.push(originalUrl);
+  
+  // 添加来自镜像的URL
+  for (const mirror of mirrors) {
+    if (originalUrl.startsWith(mirror.from)) {
+      // 对于jsdelivr，需要特殊处理URL
+      if (mirror.to.includes('jsdelivr.net')) {
+        // 从原始URL提取路径部分
+        // https://raw.githubusercontent.com/linjianyan0229/linbot-plugins/main/path/to/file.js
+        // 转换为
+        // https://cdn.jsdelivr.net/gh/linjianyan0229/linbot-plugins@main/path/to/file.js
+        const parts = originalUrl.replace('https://raw.githubusercontent.com/', '').split('/');
+        const user = parts[0];
+        const repo = parts[1];
+        const branch = parts[2];
+        const path = parts.slice(3).join('/');
+        const newUrl = `${mirror.to}/${user}/${repo}@${branch}/${path}`;
+        alternativeUrls.push(newUrl);
+      } else {
+        // 普通替换
+        alternativeUrls.push(originalUrl.replace(mirror.from, mirror.to));
+      }
+    }
+  }
+  
+  // 添加直接IP访问的方法（如果有）
+  // ... 可以在这里添加更多备选方案
+  
+  return alternativeUrls;
+}
+
+// 安装插件
+async function installPlugin(pluginInfo) {
+  try {
+    console.log(`开始安装插件: ${pluginInfo.name} (${pluginInfo.type})`);
+    sendToRenderer('server-log', `开始安装插件: ${pluginInfo.name} (${pluginInfo.type})`);
+    
+    // 创建插件目录路径
+    const pluginTypeDir = pluginInfo.type; // 例如 "群聊插件" 或 "群聊+私聊插件"
+    const pluginDir = path.join(pluginsDir, pluginTypeDir, pluginInfo.name);
+    
+    // 确保插件目录存在
+    if (!fs.existsSync(pluginDir)) {
+      fs.mkdirSync(pluginDir, { recursive: true });
+    }
+    
+    // 下载插件的所有文件
+    const downloadResults = [];
+    
+    for (const file of pluginInfo.files) {
+      // 获取所有可能的下载链接
+      const downloadUrls = getAlternativeDownloadUrl(file.download_url);
+      
+      // 变量用于跟踪是否下载成功
+      let downloadSuccess = false;
+      let lastError = null;
+      
+      // 尝试每个下载链接
+      for (const downloadUrl of downloadUrls) {
+        const targetPath = path.join(pluginDir, file.name);
+        console.log(`尝试下载文件: ${downloadUrl} -> ${targetPath}`);
+        sendToRenderer('server-log', `尝试下载文件: ${file.name}`);
+        
+        try {
+          const result = await downloadPluginFile(downloadUrl, targetPath);
+          downloadResults.push({
+            file: file.name,
+            success: true,
+            path: result.path
+          });
+          
+          downloadSuccess = true;
+          sendToRenderer('server-log', `文件 ${file.name} 下载成功`);
+          break; // 下载成功，跳出循环
+        } catch (error) {
+          console.error(`使用 ${downloadUrl} 下载文件 ${file.name} 失败:`, error);
+          lastError = error;
+          // 继续尝试下一个链接
+        }
+      }
+      
+      // 如果所有链接都失败
+      if (!downloadSuccess) {
+        console.error(`所有下载源都无法下载文件 ${file.name}:`, lastError);
+        sendToRenderer('server-log', `文件 ${file.name} 下载失败: ${lastError.message}`, 'error');
+        
+        downloadResults.push({
+          file: file.name,
+          success: false,
+          error: lastError?.message || '所有下载源均失败'
+        });
+      }
+    }
+    
+    // 检查是否所有文件都下载成功
+    const allSuccess = downloadResults.every(result => result.success);
+    
+    // 获取成功下载的文件数量
+    const successCount = downloadResults.filter(result => result.success).length;
+    const totalCount = downloadResults.length;
+    
+    // 准备结果
+    const result = {
+      success: allSuccess,
+      plugin: pluginInfo.name,
+      results: downloadResults,
+      message: allSuccess 
+        ? `插件 ${pluginInfo.name} 安装成功` 
+        : `插件 ${pluginInfo.name} 部分文件(${successCount}/${totalCount})安装成功`
+    };
+    
+    // 记录最终结果
+    console.log(`插件 ${pluginInfo.name} 安装${allSuccess ? '成功' : '部分成功'}:`, result);
+    sendToRenderer('server-log', result.message, allSuccess ? 'info' : 'error');
+    
+    return result;
+  } catch (error) {
+    console.error(`安装插件 ${pluginInfo.name} 失败:`, error);
+    sendToRenderer('server-log', `安装插件 ${pluginInfo.name} 失败: ${error.message}`, 'error');
+    
+    return {
+      success: false,
+      plugin: pluginInfo.name,
+      error: error.message
+    };
+  }
+}
 
 // 读取配置文件的函数
 function readConfig() {
@@ -701,5 +1068,55 @@ ipcMain.handle('get-plugins', async (event) => {
     return { 
       error: `获取插件列表失败: ${error.message}` 
     };
+  }
+});
+
+// 获取插件商店数据
+ipcMain.handle('get-plugin-store', async (event) => {
+  try {
+    return await getPluginStoreContent();
+  } catch (error) {
+    console.error('获取插件商店数据失败:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// 安装插件
+ipcMain.handle('install-plugin', async (event, pluginInfo) => {
+  try {
+    return await installPlugin(pluginInfo);
+  } catch (error) {
+    console.error('安装插件失败:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// 检查插件是否已安装
+ipcMain.handle('check-plugin-installed', async (event, pluginInfo) => {
+  try {
+    const pluginTypeDir = pluginInfo.type; // 例如 "群聊插件" 或 "群聊+私聊插件"
+    const pluginPath = path.join(pluginsDir, pluginTypeDir, pluginInfo.name);
+    
+    // 检查插件目录是否存在
+    const exists = fs.existsSync(pluginPath);
+    
+    // 如果存在，检查是否包含与商店相同的JS文件
+    let filesMatch = false;
+    if (exists) {
+      const files = fs.readdirSync(pluginPath);
+      const jsFiles = files.filter(file => file.endsWith('.js'));
+      
+      // 检查每个商店文件是否存在
+      const storeJsFiles = pluginInfo.files.map(f => f.name).filter(name => name.endsWith('.js'));
+      filesMatch = storeJsFiles.every(storeFile => jsFiles.includes(storeFile));
+    }
+    
+    return {
+      installed: exists && filesMatch,
+      path: pluginPath
+    };
+  } catch (error) {
+    console.error('检查插件安装状态失败:', error);
+    return { installed: false, error: error.message };
   }
 }); 

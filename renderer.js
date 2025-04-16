@@ -48,6 +48,16 @@ const editGroupJsonBtn = document.getElementById('editGroupJsonBtn');
 const cancelEditJsonBtn = document.getElementById('cancelEditJsonBtn');
 const groupJsonEditorContainer = document.getElementById('groupJsonEditorContainer');
 
+// 插件商店相关元素
+const pluginStoreContainer = document.getElementById('plugin-store-container');
+const storePluginsContainer = document.getElementById('storePluginsContainer');
+const storeStatus = document.getElementById('store-status');
+const openPluginStoreBtn = document.getElementById('openPluginStoreBtn');
+const closePluginStoreBtn = document.getElementById('closePluginStoreBtn');
+const pluginSearchInput = document.getElementById('pluginSearchInput');
+const pluginTypeFilter = document.getElementById('pluginTypeFilter');
+const refreshStoreBtn = document.getElementById('refreshStoreBtn');
+
 // --- 群聊管理功能 ---
 let groupConfig = { groups: {} };
 
@@ -1147,6 +1157,356 @@ async function updatePluginStatus() {
     }
 }
 
+// 存储插件商店数据
+let storePlugins = [];
+
+// 显示插件商店
+function showPluginStore() {
+    // 显示插件商店容器，隐藏插件列表容器
+    const pluginGroupsContainer = document.getElementById('pluginGroupsContainer');
+    if (pluginGroupsContainer) {
+        pluginGroupsContainer.parentElement.style.display = 'none';
+    }
+    
+    if (pluginStoreContainer) {
+        pluginStoreContainer.style.display = 'block';
+    }
+    
+    // 首次显示时加载插件商店数据
+    if (storePlugins.length === 0) {
+        fetchPluginStore();
+    }
+}
+
+// 隐藏插件商店
+function hidePluginStore() {
+    // 隐藏插件商店容器，显示插件列表容器
+    const pluginGroupsContainer = document.getElementById('pluginGroupsContainer');
+    if (pluginGroupsContainer) {
+        pluginGroupsContainer.parentElement.style.display = 'block';
+    }
+    
+    if (pluginStoreContainer) {
+        pluginStoreContainer.style.display = 'none';
+    }
+}
+
+// 获取插件商店数据
+async function fetchPluginStore() {
+    if (!storeStatus) return;
+    
+    try {
+        storeStatus.innerHTML = '<div class="loading-spinner"></div> 正在获取插件商店数据...';
+        storeStatus.className = 'status-bar running';
+        
+        if (storePluginsContainer) {
+            storePluginsContainer.innerHTML = '<div class="plugin-loading">正在加载插件商店数据...</div>';
+        }
+        
+        const response = await window.electronAPI.getPluginStore();
+        
+        if (response.success && response.plugins) {
+            storePlugins = response.plugins;
+            storeStatus.textContent = `插件商店共有 ${response.count} 个插件，获取时间: ${new Date().toLocaleString()}`;
+            storeStatus.className = 'status-bar running';
+            renderPluginStore(storePlugins);
+        } else {
+            storeStatus.textContent = `获取插件商店数据失败: ${response.error || '未知错误'}`;
+            storeStatus.className = 'status-bar stopped';
+            
+            if (storePluginsContainer) {
+                storePluginsContainer.innerHTML = `<div class="plugin-empty">获取插件数据失败: ${response.error || '未知错误'}</div>`;
+            }
+        }
+    } catch (error) {
+        console.error('获取插件商店数据出错:', error);
+        storeStatus.textContent = `获取插件商店数据出错: ${error.message}`;
+        storeStatus.className = 'status-bar stopped';
+        
+        if (storePluginsContainer) {
+            storePluginsContainer.innerHTML = `<div class="plugin-empty">获取插件数据出错: ${error.message}</div>`;
+        }
+    }
+}
+
+// 渲染插件商店列表
+async function renderPluginStore(plugins) {
+    if (!storePluginsContainer) return;
+    
+    // 显示当前代理设置
+    const proxyInfo = document.createElement('div');
+    proxyInfo.className = 'proxy-info';
+    proxyInfo.style.marginBottom = '15px';
+    proxyInfo.style.fontSize = '0.9em';
+    proxyInfo.style.color = 'var(--text-light)';
+    
+    // 由于无法在渲染进程中直接访问process.env，我们需要获取代理信息
+    try {
+        // 假设代理信息来自后端，这里先简化处理
+        const httpProxy = null; // 修改为从主进程获取
+        
+        if (httpProxy) {
+            proxyInfo.innerHTML = `
+                <span style="color: var(--success-color);">✓</span> 
+                当前使用代理: <code>${httpProxy}</code>
+            `;
+        } else {
+            proxyInfo.innerHTML = `
+                <span style="color: var(--warning-color);">⚠</span> 
+                未检测到HTTP代理设置。如果无法下载插件，请考虑设置代理。
+                <button id="setupProxyBtn" class="action-btn" style="padding: 2px 8px; font-size: 0.9em; margin-left: 10px;">设置代理</button>
+            `;
+        }
+    } catch (error) {
+        console.error("获取代理信息失败:", error);
+        proxyInfo.innerHTML = `
+            <span style="color: var(--warning-color);">⚠</span> 
+            无法获取代理设置。如果无法下载插件，请考虑设置代理。
+            <button id="setupProxyBtn" class="action-btn" style="padding: 2px 8px; font-size: 0.9em; margin-left: 10px;">设置代理</button>
+        `;
+    }
+    
+    // 清空容器但保留代理信息
+    storePluginsContainer.innerHTML = '';
+    storePluginsContainer.appendChild(proxyInfo);
+    
+    // 绑定设置代理按钮事件
+    const setupProxyBtn = document.getElementById('setupProxyBtn');
+    if (setupProxyBtn) {
+        setupProxyBtn.addEventListener('click', setupProxy);
+    }
+    
+    // 确保插件数据存在
+    if (!plugins || !Array.isArray(plugins) || plugins.length === 0) {
+        const emptyMessage = document.createElement('div');
+        emptyMessage.className = 'plugin-empty';
+        emptyMessage.textContent = '没有找到任何插件';
+        storePluginsContainer.appendChild(emptyMessage);
+        return;
+    }
+    
+    console.log("开始渲染插件列表，共有插件:", plugins.length);
+    
+    // 应用搜索和过滤
+    const searchTerm = pluginSearchInput ? pluginSearchInput.value.trim().toLowerCase() : '';
+    const typeFilter = pluginTypeFilter ? pluginTypeFilter.value : 'all';
+    
+    // 过滤插件
+    const filteredPlugins = plugins.filter(plugin => {
+        // 名称和描述搜索
+        const matchesSearch = 
+            !searchTerm || 
+            plugin.name.toLowerCase().includes(searchTerm) || 
+            plugin.description.toLowerCase().includes(searchTerm);
+        
+        // 类型过滤
+        const matchesType = typeFilter === 'all' || plugin.type === typeFilter;
+        
+        return matchesSearch && matchesType;
+    });
+    
+    console.log("过滤后的插件数量:", filteredPlugins.length);
+    
+    if (filteredPlugins.length === 0) {
+        const emptyMessage = document.createElement('div');
+        emptyMessage.className = 'plugin-empty';
+        emptyMessage.textContent = '没有找到符合条件的插件';
+        storePluginsContainer.appendChild(emptyMessage);
+        return;
+    }
+    
+    // 渲染每个插件
+    for (const plugin of filteredPlugins) {
+        try {
+            // 检查插件是否已安装
+            const installStatus = await window.electronAPI.checkPluginInstalled(plugin);
+            
+            const pluginElement = document.createElement('div');
+            pluginElement.className = 'plugin-store-item';
+            pluginElement.setAttribute('data-plugin-name', plugin.name);
+            pluginElement.setAttribute('data-plugin-type', plugin.type);
+            
+            // 创建插件信息部分
+            const infoElement = document.createElement('div');
+            infoElement.className = 'plugin-store-info';
+            
+            // 插件名称和类型标签
+            infoElement.innerHTML = `
+                <h4 class="plugin-store-name">
+                    ${plugin.name}
+                    <span class="plugin-type-badge">${plugin.type}</span>
+                </h4>
+                <p class="plugin-store-description">${plugin.description}</p>
+                <div class="plugin-store-meta">
+                    <span>
+                        <svg viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+                        </svg>
+                        ${plugin.files ? plugin.files.length : 0}个文件
+                    </span>
+                </div>
+            `;
+            
+            // 创建操作按钮部分
+            const actionsElement = document.createElement('div');
+            actionsElement.className = 'plugin-store-actions';
+            
+            if (installStatus.installed) {
+                // 已安装标签
+                const installedBadge = document.createElement('span');
+                installedBadge.className = 'installed-badge';
+                installedBadge.textContent = '已安装';
+                actionsElement.appendChild(installedBadge);
+                
+                // 重新安装按钮
+                const reinstallBtn = document.createElement('button');
+                reinstallBtn.className = 'action-btn edit-btn';
+                reinstallBtn.textContent = '重新安装';
+                reinstallBtn.addEventListener('click', () => installPluginFromStore(plugin));
+                actionsElement.appendChild(reinstallBtn);
+            } else {
+                // 安装按钮
+                const installBtn = document.createElement('button');
+                installBtn.className = 'action-btn install-btn';
+                installBtn.textContent = '安装';
+                installBtn.addEventListener('click', () => installPluginFromStore(plugin));
+                actionsElement.appendChild(installBtn);
+            }
+            
+            // 组合插件元素
+            pluginElement.appendChild(infoElement);
+            pluginElement.appendChild(actionsElement);
+            
+            // 添加到容器
+            storePluginsContainer.appendChild(pluginElement);
+        } catch (error) {
+            console.error(`渲染插件 ${plugin.name} 时出错:`, error);
+        }
+    }
+}
+
+// 安装插件
+async function installPluginFromStore(plugin) {
+    try {
+        // 更新插件元素状态
+        const pluginElement = storePluginsContainer.querySelector(`[data-plugin-name="${plugin.name}"][data-plugin-type="${plugin.type}"]`);
+        if (pluginElement) {
+            const actionsElement = pluginElement.querySelector('.plugin-store-actions');
+            if (actionsElement) {
+                actionsElement.innerHTML = '<div class="loading-spinner"></div> <span style="margin-left: 8px;">正在安装...</span>';
+            }
+        }
+        
+        // 安装插件
+        const result = await window.electronAPI.installPlugin(plugin);
+        
+        // 更新UI显示安装结果
+        if (pluginElement) {
+            const actionsElement = pluginElement.querySelector('.plugin-store-actions');
+            if (actionsElement) {
+                if (result.success) {
+                    // 安装成功
+                    actionsElement.innerHTML = `
+                        <span class="installed-badge">已安装</span>
+                        <button class="action-btn edit-btn">重新安装</button>
+                    `;
+                    // 重新绑定按钮事件
+                    const reinstallBtn = actionsElement.querySelector('.action-btn');
+                    if (reinstallBtn) {
+                        reinstallBtn.addEventListener('click', () => installPluginFromStore(plugin));
+                    }
+                    
+                    addServerLog(`插件 ${plugin.name} 安装成功！`, 'info');
+                } else {
+                    // 安装失败
+                    let failMessage = '安装失败';
+                    if (result.results) {
+                        // 检查部分成功的情况
+                        const successCount = result.results.filter(r => r.success).length;
+                        const totalCount = result.results.length;
+                        if (successCount > 0) {
+                            failMessage = `部分成功 (${successCount}/${totalCount})`;
+                        }
+                    }
+                    
+                    actionsElement.innerHTML = `
+                        <span style="color: var(--danger-color);">${failMessage}</span>
+                        <button class="action-btn install-btn">重试</button>
+                    `;
+                    
+                    // 重新绑定按钮事件
+                    const retryBtn = actionsElement.querySelector('.action-btn');
+                    if (retryBtn) {
+                        retryBtn.addEventListener('click', () => installPluginFromStore(plugin));
+                    }
+                    
+                    addServerLog(`插件 ${plugin.name} 安装失败: ${result.error || '未知错误'}`, 'error');
+                }
+            }
+        }
+        
+        // 记录安装结果
+        if (result.success) {
+            console.log(`插件 ${plugin.name} 安装成功:`, result);
+        } else {
+            console.error(`插件 ${plugin.name} 安装失败:`, result);
+        }
+    } catch (error) {
+        console.error(`安装插件 ${plugin.name} 出错:`, error);
+        addServerLog(`安装插件 ${plugin.name} 出错: ${error.message}`, 'error');
+        
+        // 更新UI显示错误
+        const pluginElement = storePluginsContainer.querySelector(`[data-plugin-name="${plugin.name}"][data-plugin-type="${plugin.type}"]`);
+        if (pluginElement) {
+            const actionsElement = pluginElement.querySelector('.plugin-store-actions');
+            if (actionsElement) {
+                actionsElement.innerHTML = `
+                    <span style="color: var(--danger-color);">安装出错</span>
+                    <button class="action-btn install-btn">重试</button>
+                `;
+                
+                // 重新绑定按钮事件
+                const retryBtn = actionsElement.querySelector('.action-btn');
+                if (retryBtn) {
+                    retryBtn.addEventListener('click', () => installPluginFromStore(plugin));
+                }
+            }
+        }
+    }
+}
+
+// 初始化插件商店
+function initPluginStore() {
+    // 打开插件商店按钮
+    if (openPluginStoreBtn) {
+        openPluginStoreBtn.addEventListener('click', showPluginStore);
+    }
+    
+    // 关闭插件商店按钮
+    if (closePluginStoreBtn) {
+        closePluginStoreBtn.addEventListener('click', hidePluginStore);
+    }
+    
+    // 搜索输入框
+    if (pluginSearchInput) {
+        pluginSearchInput.addEventListener('input', () => {
+            renderPluginStore(storePlugins);
+        });
+    }
+    
+    // 类型过滤下拉框
+    if (pluginTypeFilter) {
+        pluginTypeFilter.addEventListener('change', () => {
+            renderPluginStore(storePlugins);
+        });
+    }
+    
+    // 刷新按钮
+    if (refreshStoreBtn) {
+        refreshStoreBtn.addEventListener('click', fetchPluginStore);
+    }
+}
+
 // 初始化API相关功能
 async function initApi() {
     // 加载群组配置
@@ -1192,6 +1552,9 @@ async function initApi() {
     if (saveGroupJsonBtn) {
         saveGroupJsonBtn.addEventListener('click', saveGroupJsonFromEditor);
     }
+    
+    // 初始化插件商店
+    initPluginStore();
 }
 
 // 直接加载group.json到编辑器
@@ -1291,4 +1654,31 @@ function hideGroupJsonEditor() {
     if (editGroupJsonBtn) {
         editGroupJsonBtn.style.display = 'inline-block';
     }
+}
+
+// 设置HTTP代理
+function setupProxy() {
+    // 显示代理设置对话框
+    const currentProxy = process.env.HTTP_PROXY || process.env.http_proxy || '';
+    const proxyValue = prompt('请输入HTTP代理地址 (例如: http://127.0.0.1:7890)', currentProxy);
+    
+    if (proxyValue === null) {
+        // 用户取消设置
+        return;
+    }
+    
+    if (proxyValue.trim() === '') {
+        // 清除代理设置
+        process.env.HTTP_PROXY = '';
+        process.env.http_proxy = '';
+        addServerLog('已清除HTTP代理设置', 'info');
+    } else {
+        // 设置新代理
+        process.env.HTTP_PROXY = proxyValue.trim();
+        process.env.http_proxy = proxyValue.trim();
+        addServerLog(`已设置HTTP代理: ${proxyValue.trim()}`, 'info');
+    }
+    
+    // 刷新插件商店显示
+    renderPluginStore(storePlugins);
 }

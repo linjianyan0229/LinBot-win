@@ -71,4 +71,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 插件相关API
   getPlugins: async () => await ipcRenderer.invoke('get-plugins'),
+  
+  // 插件商店相关API
+  getPluginStore: async () => await ipcRenderer.invoke('get-plugin-store'),
+  installPlugin: async (pluginInfo) => await ipcRenderer.invoke('install-plugin', pluginInfo),
+  checkPluginInstalled: async (pluginInfo) => await ipcRenderer.invoke('check-plugin-installed', pluginInfo),
 }); 
