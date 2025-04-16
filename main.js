@@ -632,9 +632,16 @@ ipcMain.handle('get-plugins', async (event) => {
     // 收集插件信息
     const pluginsList = [];
     for (const [name, plugin] of pluginManager.plugins) {
+      // 提取插件路径和分组信息
+      const pluginPath = plugin.filePath || '';
+      const relativePath = pluginPath.replace(pluginsDir, '').split(path.sep).filter(p => p.length > 0);
+      const group = relativePath.length > 0 ? relativePath[0] : '默认';
+      
       pluginsList.push({
         name: name,
         description: plugin.description || '无描述信息',
+        path: pluginPath.replace(pluginsDir, ''),
+        group: group,
         status: 'active'
       });
     }

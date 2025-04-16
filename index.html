@@ -530,6 +530,93 @@
             transform: translateY(-1px);
             box-shadow: 0 2px 8px var(--shadow-color);
         }
+        
+        .plugin-group {
+            margin-bottom: 20px;
+        }
+        
+        .plugin-group-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .plugin-group-name {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--dark-color);
+            margin: 0;
+            display: flex;
+            align-items: center;
+        }
+        
+        .plugin-group-badge {
+            background-color: var(--primary-color);
+            color: white;
+            font-size: 12px;
+            padding: 2px 8px;
+            border-radius: 12px;
+            margin-left: 10px;
+        }
+        
+        .plugin-card {
+            background-color: var(--bg-color);
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-left: 4px solid var(--primary-color);
+            transition: all 0.3s ease;
+        }
+        
+        .plugin-card:hover {
+            box-shadow: 0 2px 8px var(--shadow-color);
+            transform: translateY(-2px);
+        }
+        
+        .plugin-name {
+            font-weight: 600;
+            margin: 0 0 5px 0;
+            color: var(--dark-color);
+        }
+        
+        .plugin-description {
+            color: var(--text-light);
+            margin: 0;
+            font-size: 0.9em;
+        }
+        
+        .plugin-status {
+            font-size: 12px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-left: auto;
+            font-weight: 600;
+        }
+        
+        .plugin-status-active {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        
+        .plugin-status-inactive {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        
+        .plugin-loading {
+            text-align: center;
+            padding: 20px;
+            color: var(--text-light);
+        }
+        
+        .plugin-empty {
+            text-align: center;
+            padding: 20px;
+            color: var(--text-light);
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -676,20 +763,15 @@
                             插件仓库
                         </a>
                     </div>
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>插件名称</th>
-                                <th>描述</th>
-                                <th>状态</th>
-                            </tr>
-                        </thead>
-                        <tbody id="pluginTableBody">
-                            <!-- 插件列表将通过JavaScript动态加载 -->
-                        </tbody>
-                    </table>
+                    
+                    <!-- 插件分组容器 -->
+                    <div id="pluginGroupsContainer">
+                        <!-- 分组内容将通过JavaScript动态加载 -->
+                        <div class="plugin-loading">正在加载插件...</div>
+                    </div>
+                    
                     <div class="tip-box">
-                        <p>提示: 插件文件位于程序目录下的plugins文件夹中，每个插件一个JS文件。</p>
+                        <p>提示: 插件文件位于程序目录下的plugins文件夹中，插件会按照子文件夹分组显示。</p>
                         <p>重启服务器可以重新加载插件。</p>
                     </div>
                 </div>
