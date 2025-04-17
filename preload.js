@@ -41,6 +41,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onGroupStatusUpdated: (callback) => ipcRenderer.on('group-status-updated', (_event, value) => callback(value)),
   // 群组信息更新通知
   onGroupInfoUpdated: (callback) => ipcRenderer.on('group-info-updated', (_event, value) => callback(value)),
+  // 群组批量删除通知
+  onGroupsBatchDeleted: (callback) => ipcRenderer.on('groups-batch-deleted', (_event, value) => callback(value)),
 
   // 渲染进程到主进程的请求/响应通信
   getConfig: () => ipcRenderer.invoke('get-config'),
@@ -59,6 +61,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   toggleGroupStatus: (groupInfo) => ipcRenderer.send('toggle-group-status', groupInfo),
   // 更新群信息
   updateGroupInfo: (groupInfo) => ipcRenderer.send('update-group-info', groupInfo),
+  // 批量删除群组
+  batchDeleteGroups: (groupIds) => ipcRenderer.send('batch-delete-groups', groupIds),
 
   // 调用OneBot API (渲染进程 -> 主进程 -> OneBot客户端)
   callOneBotApi: (action, params) => ipcRenderer.invoke('call-onebot-api', action, params),

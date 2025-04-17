@@ -647,6 +647,7 @@ async function loadGroupConfig() {
     }
 }
 
+// 渲染群组列表
 function renderGroupList() {
     // 清空现有群列表
     groupTableBody.innerHTML = '';
@@ -658,7 +659,7 @@ function renderGroupList() {
     if (groups.length === 0) {
         // 显示无数据提示
         const row = document.createElement('tr');
-        row.innerHTML = '<td colspan="4" style="text-align: center; padding: 20px;">暂无群聊数据</td>';
+        row.innerHTML = '<td colspan="5" style="text-align: center; padding: 20px;">暂无群聊数据</td>';
         groupTableBody.appendChild(row);
         return;
     }
@@ -667,6 +668,15 @@ function renderGroupList() {
     groups.forEach(group => {
         const row = document.createElement('tr');
         row.setAttribute('data-group-id', group.id);
+        
+        // 选择框
+        const checkboxCell = document.createElement('td');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'group-checkbox';
+        checkbox.setAttribute('data-group-id', group.id);
+        checkboxCell.appendChild(checkbox);
+        row.appendChild(checkboxCell);
         
         // 群号
         const idCell = document.createElement('td');
@@ -695,6 +705,14 @@ function renderGroupList() {
         toggleBtn.textContent = group.enabled ? '禁用' : '启用';
         toggleBtn.onclick = () => toggleGroupStatus(group.id, !group.enabled);
         actionCell.appendChild(toggleBtn);
+        
+        // 编辑按钮
+        // const editBtn = document.createElement('button');
+        // editBtn.className = 'action-btn edit-btn';
+        // editBtn.textContent = '编辑';
+        // editBtn.style.marginLeft = '8px';
+        // editBtn.onclick = () => editGroup(group.id);
+        // actionCell.appendChild(editBtn);
         
         // 添加删除按钮
         const deleteBtn = document.createElement('button');
@@ -1681,4 +1699,56 @@ function setupProxy() {
     
     // 刷新插件商店显示
     renderPluginStore(storePlugins);
+}
+
+// 批量删除选中的群组
+function batchDeleteGroups() {
+    // 获取所有选中的群组ID
+    const selectedCheckboxes = document.querySelectorAll('.group-checkbox:checked');
+    const selectedGroupIds = Array.from(selectedCheckboxes).map(checkbox => 
+        checkbox.getAttribute('data-group-id')
+    );
+    
+    // 检查是否有选中的群组
+    if (selectedGroupIds.length === 0) {
+        alert('请先选择要删除的群组');
+        return;
+    }
+    
+    // 确认删除
+    if (!confirm(`确定要删除选中的 ${selectedGroupIds.length} 个群组吗？此操作不可恢复。`)) {
+        return;
+    }
+    
+    // 调用主进程删除群组
+    window.electronAPI.batchDeleteGroups(selectedGroupIds);
+}
+
+// 全选/取消全选
+function toggleSelectAllGroups() {
+    const selectAllCheckbox = document.getElementById('selectAllGroups');
+    const isChecked = selectAllCheckbox.checked;
+    
+    // 设置所有复选框的状态
+    document.querySelectorAll('.group-checkbox').forEach(checkbox => {
+        checkbox.checked = isChecked;
+    });
+}
+
+// 监听群组批量删除事件
+window.electronAPI.onGroupsBatchDeleted(() => {
+    // 刷新列表
+    loadGroupConfig();
+});
+
+// 批量删除按钮点击事件
+const batchDeleteBtn = document.getElementById('batchDeleteBtn');
+if (batchDeleteBtn) {
+    batchDeleteBtn.addEventListener('click', batchDeleteGroups);
+}
+
+// 全选/取消全选复选框
+const selectAllGroups = document.getElementById('selectAllGroups');
+if (selectAllGroups) {
+    selectAllGroups.addEventListener('change', toggleSelectAllGroups);
 }

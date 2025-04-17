@@ -1119,4 +1119,39 @@ ipcMain.handle('check-plugin-installed', async (event, pluginInfo) => {
     console.error('检查插件安装状态失败:', error);
     return { installed: false, error: error.message };
   }
+});
+
+// 批量删除群组
+ipcMain.on('batch-delete-groups', (event, groupIds) => {
+  try {
+    if (!Array.isArray(groupIds) || groupIds.length === 0) {
+      sendToRenderer('server-log', '没有选择要删除的群组', 'warning');
+      return;
+    }
+
+    const config = readGroupConfig();
+    let deletedCount = 0;
+
+    // 遍历删除所有指定的群组
+    for (const groupId of groupIds) {
+      if (config.groups && config.groups[groupId]) {
+        delete config.groups[groupId];
+        deletedCount++;
+      }
+    }
+
+    // 保存配置
+    if (deletedCount > 0) {
+      writeGroupConfig(config);
+      sendToRenderer('server-log', `已批量删除 ${deletedCount} 个群组`, 'info');
+      
+      // 通知渲染进程群组已批量删除
+      mainWindow.webContents.send('groups-batch-deleted', groupIds);
+    } else {
+      sendToRenderer('server-log', '没有找到要删除的群组', 'warning');
+    }
+  } catch (error) {
+    console.error('批量删除群组失败:', error);
+    sendToRenderer('server-log', `批量删除群组失败: ${error.message}`, 'error');
+  }
 }); 

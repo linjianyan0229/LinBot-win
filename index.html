@@ -314,15 +314,23 @@
             background-color: var(--card-bg);
             border-radius: 0 0 8px 8px;
             box-shadow: 0 2px 8px var(--shadow-color);
-            overflow: hidden;
+            overflow: auto;
             width: 100%;
             box-sizing: border-box;
+            max-height: calc(100vh - 400px);
         }
         
         .group-list {
             width: 100%;
             border-collapse: collapse;
             table-layout: fixed;
+        }
+        
+        .group-list thead {
+            position: sticky;
+            top: 0;
+            background-color: var(--bg-color);
+            z-index: 1;
         }
         
         .group-list th, .group-list td {
@@ -345,10 +353,11 @@
         }
         
         /* 设置各列宽度 */
-        .group-list th:nth-child(1), .group-list td:nth-child(1) { width: 20%; }
-        .group-list th:nth-child(2), .group-list td:nth-child(2) { width: 40%; }
-        .group-list th:nth-child(3), .group-list td:nth-child(3) { width: 15%; }
-        .group-list th:nth-child(4), .group-list td:nth-child(4) { width: 25%; }
+        .group-list th:nth-child(1), .group-list td:nth-child(1) { width: 5%; }
+        .group-list th:nth-child(2), .group-list td:nth-child(2) { width: 15%; }
+        .group-list th:nth-child(3), .group-list td:nth-child(3) { width: 40%; }
+        .group-list th:nth-child(4), .group-list td:nth-child(4) { width: 15%; }
+        .group-list th:nth-child(5), .group-list td:nth-child(5) { width: 25%; }
         
         .group-status {
             display: inline-block;
@@ -521,6 +530,27 @@
                 width: 100%;
                 margin-bottom: 8px;
             }
+            
+            .group-list-container {
+                max-height: calc(100vh - 350px);
+                overflow-x: auto;
+            }
+            
+            .group-list th, .group-list td {
+                padding: 10px 8px;
+            }
+            
+            .action-btn {
+                padding: 6px 10px;
+                font-size: 12px;
+                margin-right: 4px;
+            }
+            
+            .group-list th:nth-child(1), .group-list td:nth-child(1) { width: 8%; }
+            .group-list th:nth-child(2), .group-list td:nth-child(2) { width: 22%; }
+            .group-list th:nth-child(3), .group-list td:nth-child(3) { width: 28%; }
+            .group-list th:nth-child(4), .group-list td:nth-child(4) { width: 12%; }
+            .group-list th:nth-child(5), .group-list td:nth-child(5) { width: 30%; }
         }
         
         .repo-btn {
@@ -869,6 +899,7 @@
                         <button id="getGroupListBtn">获取群聊列表</button>
                         <button id="enableAllGroupsBtn" class="toggle-btn">全部启用</button>
                         <button id="disableAllGroupsBtn" class="toggle-btn disabled">全部禁用</button>
+                        <button id="batchDeleteBtn" class="delete-btn">批量删除</button>
                     </div>
                 </div>
                 
@@ -876,6 +907,7 @@
                     <table class="group-list">
                         <thead>
                             <tr>
+                                <th width="5%"><input type="checkbox" id="selectAllGroups"></th>
                                 <th>群号</th>
                                 <th>群名称</th>
                                 <th>状态</th>
