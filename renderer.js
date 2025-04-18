@@ -1035,6 +1035,144 @@ function initializePageSwitcher() {
     });
 }
 
+// 程序启动时间
+const programStartTime = new Date();
+
+// 定期更新程序运行时间
+function updateProgramRuntime() {
+    const startTimeElement = document.getElementById('program-start-time');
+    const uptimeElement = document.getElementById('program-uptime');
+    
+    if (startTimeElement && uptimeElement) {
+        // 更新启动时间
+        startTimeElement.textContent = programStartTime.toLocaleString();
+        
+        // 计算运行时长
+        const now = new Date();
+        const uptimeMs = now - programStartTime;
+        const days = Math.floor(uptimeMs / (24 * 60 * 60 * 1000));
+        const hours = Math.floor((uptimeMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+        const minutes = Math.floor((uptimeMs % (60 * 60 * 1000)) / (60 * 1000));
+        const seconds = Math.floor((uptimeMs % (60 * 1000)) / 1000);
+        
+        let uptimeText = '';
+        if (days > 0) uptimeText += `${days}天 `;
+        uptimeText += `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        
+        uptimeElement.textContent = uptimeText;
+    }
+}
+
+// 每秒更新一次运行时间
+setInterval(updateProgramRuntime, 1000);
+
+// 初始化运行时间显示
+document.addEventListener('DOMContentLoaded', () => {
+    updateProgramRuntime();
+});
+
+// 日志下载功能
+function downloadLog(logContainerId, filename) {
+    const logContainer = document.getElementById(logContainerId);
+    if (!logContainer) return;
+    
+    // 收集所有日志条目
+    const logEntries = logContainer.querySelectorAll('.log-entry');
+    if (logEntries.length === 0) {
+        alert('没有可下载的日志');
+        return;
+    }
+    
+    // 生成日志文本
+    let logText = '=== LinBot UI 日志导出 ===\n';
+    logText += `导出时间: ${new Date().toLocaleString()}\n\n`;
+    
+    logEntries.forEach(entry => {
+        const timeSpan = entry.querySelector('.log-time');
+        const messageSpan = entry.querySelector('span:not(.log-time)');
+        
+        if (timeSpan && messageSpan) {
+            logText += `${timeSpan.textContent} ${messageSpan.textContent}\n`;
+        }
+    });
+    
+    // 创建下载链接
+    const blob = new Blob([logText], { type: 'text/plain;charset=utf-8' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = filename || 'linbot-log.txt';
+    
+    // 触发下载
+    document.body.appendChild(a);
+    a.click();
+    
+    // 清理
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+}
+
+// 清除日志功能
+function clearLog(logContainerId) {
+    const logContainer = document.getElementById(logContainerId);
+    if (!logContainer) return;
+    
+    // 确认提示
+    if (confirm('确定要清除所有日志吗？此操作不可恢复。')) {
+        // 清空日志容器
+        logContainer.innerHTML = '';
+        addServerLog('日志已清除', 'info');
+    }
+}
+
+// 初始化日志按钮事件
+document.addEventListener('DOMContentLoaded', () => {
+    // 服务器日志下载按钮
+    const downloadServerLogBtn = document.getElementById('download-server-log');
+    if (downloadServerLogBtn) {
+        downloadServerLogBtn.addEventListener('click', () => {
+            downloadLog('server-log-display', `linbot-server-log-${formatDateFilename(new Date())}.txt`);
+        });
+    }
+    
+    // 服务器日志清除按钮
+    const clearServerLogBtn = document.getElementById('clear-server-log');
+    if (clearServerLogBtn) {
+        clearServerLogBtn.addEventListener('click', () => {
+            clearLog('server-log-display');
+        });
+    }
+    
+    // 事件日志下载按钮
+    const downloadEventLogBtn = document.getElementById('download-event-log');
+    if (downloadEventLogBtn) {
+        downloadEventLogBtn.addEventListener('click', () => {
+            downloadLog('event-log-container', `linbot-event-log-${formatDateFilename(new Date())}.txt`);
+        });
+    }
+    
+    // 事件日志清除按钮
+    const clearEventLogBtn = document.getElementById('clear-event-log');
+    if (clearEventLogBtn) {
+        clearEventLogBtn.addEventListener('click', () => {
+            clearLog('event-log-container');
+        });
+    }
+});
+
+// 格式化日期为文件名友好格式
+function formatDateFilename(date) {
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const day = date.getDate().toString().padStart(2, '0');
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const seconds = date.getSeconds().toString().padStart(2, '0');
+    
+    return `${year}${month}${day}-${hours}${minutes}${seconds}`;
+}
+
 // 初始化页面
 document.addEventListener('DOMContentLoaded', function() {
     // 初始化服务器状态对象
