@@ -345,6 +345,130 @@ class MessageApi {
             }
         };
     }
+    
+    /**
+     * 创建JSON消息段
+     * @param {object|string} data JSON数据对象或字符串
+     * @returns {object} 消息段对象
+     */
+    json(data) {
+        const jsonData = typeof data === 'string' ? data : JSON.stringify(data);
+        return {
+            type: 'json',
+            data: {
+                data: jsonData
+            }
+        };
+    }
+    
+    /**
+     * 创建带按钮的消息
+     * @param {string|object} markdown Markdown内容或模板对象
+     * @param {array} buttons 按钮数组，每个按钮是一个对象
+     * @param {string|number} bot_appid 机器人的APPID
+     * @returns {object} JSON消息段对象
+     */
+    buttonMessage(markdown, buttons, bot_appid) {
+        // 处理markdown
+        let markdownData;
+        if (typeof markdown === 'string') {
+            markdownData = {
+                content: markdown
+            };
+        } else if (typeof markdown === 'object' && markdown.template_id) {
+            markdownData = markdown;
+        } else {
+            throw new Error('markdown参数格式错误');
+        }
+        
+        // 处理按钮组
+        const rows = [];
+        if (Array.isArray(buttons)) {
+            // 如果传入的是二维数组，则直接使用
+            if (buttons.length > 0 && Array.isArray(buttons[0])) {
+                buttons.forEach((rowButtons, rowIndex) => {
+                    if (Array.isArray(rowButtons) && rowButtons.length > 0) {
+                        rows.push({
+                            buttons: rowButtons.map((btn, btnIndex) => this._formatButton(btn, `${rowIndex}_${btnIndex}`))
+                        });
+                    }
+                });
+            } 
+            // 如果传入的是一维数组，则创建单行
+            else if (buttons.length > 0) {
+                rows.push({
+                    buttons: buttons.map((btn, index) => this._formatButton(btn, index))
+                });
+            }
+        }
+        
+        // 构造完整的JSON消息
+        const messageData = {
+            markdown: markdownData,
+            keyboard: {
+                content: {
+                    rows,
+                    bot_appid: bot_appid || ''
+                }
+            }
+        };
+        
+        return this.json(messageData);
+    }
+    
+    /**
+     * 格式化按钮对象
+     * @private
+     * @param {object} button 按钮配置
+     * @param {string|number} defaultId 默认按钮ID
+     * @returns {object} 格式化后的按钮对象
+     */
+    _formatButton(button, defaultId) {
+        if (typeof button !== 'object') {
+            throw new Error('按钮必须是对象');
+        }
+        
+        // 构造按钮基本结构
+        return {
+            id: button.id || String(defaultId),
+            render_data: {
+                label: button.label || '按钮',
+                visited_label: button.visited_label || button.label || '已点击'
+            },
+            action: {
+                type: button.type || 2, // 默认为2，表示回调数据
+                permission: button.permission || { type: 2 }, // 默认全员可操作
+                data: button.data || '',
+                click_limit: button.click_limit || 0,
+                unsupport_tips: button.unsupport_tips || '不支持的操作',
+                at_bot_show_channel_list: button.at_bot_show_channel_list !== undefined ? button.at_bot_show_channel_list : true
+            }
+        };
+    }
+    
+    /**
+     * 点击按钮
+     * @param {number|string} group_id 群号
+     * @param {string} bot_appid 机器人的APPID
+     * @param {string} button_id 按钮ID
+     * @param {string} callback_data 回调数据
+     * @param {string} msg_seq 消息序列号
+     * @returns {Promise<object>} 返回结果
+     */
+    async clickButton(group_id, bot_appid, button_id, callback_data, msg_seq) {
+        try {
+            return await this.client.callApi('click_inline_keyboard_button', {
+                group_id: Number(group_id) || group_id,
+                bot_appid,
+                button_id,
+                callback_data,
+                msg_seq
+            });
+        } catch (error) {
+            console.error('[MessageApi] 点击按钮失败', error);
+            throw error;
+        }
+    }
 }
 
 module.exports = MessageApi; 
