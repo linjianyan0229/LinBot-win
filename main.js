@@ -181,69 +181,118 @@ async function getPluginStoreContent() {
     // 获取仓库根目录内容
     const rootContent = await fetchFromGitHub('/repos/linjianyan0229/linbot-plugins/contents');
     
-    // 查找群聊和私聊插件目录
+    // 查找所有目录类型的条目，不再限制只获取群聊和私聊插件目录
     const pluginDirs = rootContent.filter(item => 
       item.type === 'dir' && 
-      (item.name === '群聊插件' || item.name === '群聊+私聊插件')
+      !item.name.startsWith('.') // 排除隐藏目录
     );
     
     // 获取每个插件目录的内容
     const pluginsList = [];
     
     for (const dir of pluginDirs) {
-      const dirContent = await fetchFromGitHub(`/repos/linjianyan0229/linbot-plugins/contents/${encodeURIComponent(dir.path)}`);
-      
-      // 检查是否是空目录
-      if (!Array.isArray(dirContent) || dirContent.length === 0) {
-        continue;
-      }
-      
-      // 遍历目录中的插件
-      for (const item of dirContent) {
-        if (item.type === 'dir') {
-          try {
-            // 获取插件目录中的文件
-            const pluginFiles = await fetchFromGitHub(`/repos/linjianyan0229/linbot-plugins/contents/${encodeURIComponent(item.path)}`);
-            
-            // 检查插件目录是否包含.js文件
-            const jsFiles = pluginFiles.filter(file => file.name.endsWith('.js'));
-            const readmeFile = pluginFiles.find(file => file.name.toLowerCase() === 'readme.md');
-            
-            // 如果有JS文件，则认为是有效插件
-            if (jsFiles.length > 0) {
-              // 尝试从readme提取描述
-              let description = '无描述信息';
-              if (readmeFile) {
-                try {
-                  const readmeContent = await fetchFromGitHub(`/repos/linjianyan0229/linbot-plugins/contents/${encodeURIComponent(readmeFile.path)}`);
-                  const decodedContent = Buffer.from(readmeContent.content, 'base64').toString('utf8');
-                  // 提取第一行作为描述
-                  const firstLine = decodedContent.split('\n')[0].replace(/^#\s*/, '').trim();
-                  if (firstLine) {
-                    description = firstLine;
-                  }
-                } catch (readmeError) {
-                  console.error(`获取README失败: ${readmeError.message}`);
-                }
+      try {
+        const dirContent = await fetchFromGitHub(`/repos/linjianyan0229/linbot-plugins/contents/${encodeURIComponent(dir.path)}`);
+        
+        // 检查是否是空目录
+        if (!Array.isArray(dirContent) || dirContent.length === 0) {
+          continue;
+        }
+        
+        // 检查目录中是否有JS文件
+        const jsFiles = dirContent.filter(file => file.name.endsWith('.js') && file.type === 'file');
+        
+        if (jsFiles.length > 0) {
+          // 如果目录中直接包含JS文件，则该目录被视为一个插件
+          
+          // 尝试查找README文件获取描述
+          const readmeFile = dirContent.find(file => 
+            file.name.toLowerCase() === 'readme.md' && file.type === 'file'
+          );
+          
+          // 提取描述
+          let description = '无描述信息';
+          if (readmeFile) {
+            try {
+              const readmeContent = await fetchFromGitHub(`/repos/linjianyan0229/linbot-plugins/contents/${encodeURIComponent(readmeFile.path)}`);
+              const decodedContent = Buffer.from(readmeContent.content, 'base64').toString('utf8');
+              // 提取第一行作为描述
+              const firstLine = decodedContent.split('\n')[0].replace(/^#\s*/, '').trim();
+              if (firstLine) {
+                description = firstLine;
               }
-              
-              pluginsList.push({
-                name: item.name,
-                path: item.path,
-                type: dir.name,
-                files: jsFiles.map(file => ({
-                  name: file.name,
-                  path: file.path,
-                  download_url: file.download_url
-                })),
-                description: description,
-                last_updated: new Date().toISOString() // GitHub API不直接提供最后更新时间
-              });
+            } catch (readmeError) {
+              console.error(`获取README失败: ${readmeError.message}`);
             }
-          } catch (subError) {
-            console.error(`获取插件 ${item.name} 详情失败: ${subError.message}`);
+          }
+          
+          // 将整个目录视为一个插件
+          pluginsList.push({
+            name: dir.name,
+            path: dir.path,
+            type: dir.name, // 使用目录名作为类型
+            files: jsFiles.map(file => ({
+              name: file.name,
+              path: file.path,
+              download_url: file.download_url
+            })),
+            description: description,
+            last_updated: new Date().toISOString()
+          });
+        } else {
+          // 目录中没有JS文件，检查是否有子目录
+          const subDirs = dirContent.filter(item => item.type === 'dir');
+          
+          // 遍历每个子目录
+          for (const subDir of subDirs) {
+            try {
+              const subDirContent = await fetchFromGitHub(`/repos/linjianyan0229/linbot-plugins/contents/${encodeURIComponent(subDir.path)}`);
+              
+              // 检查子目录是否有JS文件
+              const subDirJsFiles = subDirContent.filter(file => file.name.endsWith('.js') && file.type === 'file');
+              
+              if (subDirJsFiles.length > 0) {
+                // 查找README文件获取描述
+                const subReadmeFile = subDirContent.find(file => 
+                  file.name.toLowerCase() === 'readme.md' && file.type === 'file'
+                );
+                
+                // 提取描述
+                let subDescription = '无描述信息';
+                if (subReadmeFile) {
+                  try {
+                    const readmeContent = await fetchFromGitHub(`/repos/linjianyan0229/linbot-plugins/contents/${encodeURIComponent(subReadmeFile.path)}`);
+                    const decodedContent = Buffer.from(readmeContent.content, 'base64').toString('utf8');
+                    const firstLine = decodedContent.split('\n')[0].replace(/^#\s*/, '').trim();
+                    if (firstLine) {
+                      subDescription = firstLine;
+                    }
+                  } catch (readmeError) {
+                    console.error(`获取子目录README失败: ${readmeError.message}`);
+                  }
+                }
+                
+                // 添加这个子目录作为插件
+                pluginsList.push({
+                  name: subDir.name,
+                  path: subDir.path,
+                  type: dir.name, // 主目录名作为类型
+                  files: subDirJsFiles.map(file => ({
+                    name: file.name,
+                    path: file.path,
+                    download_url: file.download_url
+                  })),
+                  description: subDescription,
+                  last_updated: new Date().toISOString()
+                });
+              }
+            } catch (subError) {
+              console.error(`获取子目录 ${subDir.name} 详情失败: ${subError.message}`);
+            }
           }
         }
+      } catch (dirError) {
+        console.error(`获取目录 ${dir.name} 内容失败: ${dirError.message}`);
       }
     }
     
@@ -1094,7 +1143,7 @@ ipcMain.handle('install-plugin', async (event, pluginInfo) => {
 // 检查插件是否已安装
 ipcMain.handle('check-plugin-installed', async (event, pluginInfo) => {
   try {
-    const pluginTypeDir = pluginInfo.type; // 例如 "群聊插件" 或 "群聊+私聊插件"
+    const pluginTypeDir = pluginInfo.type; // 插件类型目录，可以是任何类型如 "群聊插件"、"游戏插件" 等
     const pluginPath = path.join(pluginsDir, pluginTypeDir, pluginInfo.name);
     
     // 检查插件目录是否存在
@@ -1154,4 +1203,696 @@ ipcMain.on('batch-delete-groups', (event, groupIds) => {
     console.error('批量删除群组失败:', error);
     sendToRenderer('server-log', `批量删除群组失败: ${error.message}`, 'error');
   }
-}); 
+});
+
+// 下载单个插件文件
+async function downloadSinglePluginFile(fileInfo) {
+  try {
+    console.log(`开始下载单个文件: ${fileInfo.name}`);
+    sendToRenderer('server-log', `开始下载文件: ${fileInfo.name}`);
+    
+    // 提取文件名
+    const fileName = fileInfo.name;
+    let targetPath;
+    
+    // 检查是否需要保持原有目录结构
+    const preserveStructure = fileInfo.preserveStructure === true;
+    
+    if (preserveStructure) {
+      // 使用原始目录结构（保持与installPlugin相同的逻辑）
+      const pluginTypeDir = fileInfo.plugin_type; // 插件类型目录
+      const pluginDir = path.join(pluginsDir, pluginTypeDir, fileInfo.plugin_name);
+      
+      // 确保插件目录存在
+      if (!fs.existsSync(pluginDir)) {
+        fs.mkdirSync(pluginDir, { recursive: true });
+      }
+      
+      // 目标文件路径
+      targetPath = path.join(pluginDir, fileName);
+    } else {
+      // 直接保存到插件类型的目录下，不创建插件名的子目录
+      const pluginTypeDir = fileInfo.plugin_type; // 插件类型目录
+      const typeDir = path.join(pluginsDir, pluginTypeDir);
+      
+      // 确保类型目录存在
+      if (!fs.existsSync(typeDir)) {
+        fs.mkdirSync(typeDir, { recursive: true });
+      }
+      
+      // 目标文件路径
+      targetPath = path.join(typeDir, fileName);
+    }
+    
+    // 获取所有可能的下载链接
+    const downloadUrls = getAlternativeDownloadUrl(fileInfo.download_url);
+    
+    // 变量用于跟踪是否下载成功
+    let downloadSuccess = false;
+    let lastError = null;
+    let result = null;
+    
+    // 尝试每个下载链接
+    for (const downloadUrl of downloadUrls) {
+      console.log(`尝试下载文件: ${downloadUrl} -> ${targetPath}`);
+      sendToRenderer('server-log', `尝试下载文件: ${fileName}`);
+      
+      try {
+        result = await downloadPluginFile(downloadUrl, targetPath);
+        downloadSuccess = true;
+        sendToRenderer('server-log', `文件 ${fileName} 下载成功，保存到 ${targetPath}`);
+        break; // 下载成功，跳出循环
+      } catch (error) {
+        console.error(`使用 ${downloadUrl} 下载文件 ${fileName} 失败:`, error);
+        lastError = error;
+        // 继续尝试下一个链接
+      }
+    }
+    
+    // 返回下载结果
+    if (downloadSuccess) {
+      return {
+        success: true,
+        file: fileName,
+        path: targetPath,
+        message: `文件 ${fileName} 下载成功`
+      };
+    } else {
+      console.error(`所有下载源都无法下载文件 ${fileName}:`, lastError);
+      sendToRenderer('server-log', `文件 ${fileName} 下载失败: ${lastError.message}`, 'error');
+      
+      return {
+        success: false,
+        file: fileName,
+        error: lastError?.message || '所有下载源均失败'
+      };
+    }
+  } catch (error) {
+    console.error(`下载文件 ${fileInfo.name} 失败:`, error);
+    sendToRenderer('server-log', `下载文件 ${fileInfo.name} 失败: ${error.message}`, 'error');
+    
+    return {
+      success: false,
+      file: fileInfo.name,
+      error: error.message
+    };
+  }
+}
+
+// 下载单个插件文件
+ipcMain.handle('download-single-file', async (event, fileInfo) => {
+  try {
+    return await downloadSinglePluginFile(fileInfo);
+  } catch (error) {
+    console.error('下载单个文件失败:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+async function installPluginFromStore(plugin) {
+  if (!plugin || !plugin.files) {
+    log.error('安装插件失败：无效的插件信息');
+    return { success: false, message: '无效的插件信息' };
+  }
+  
+  try {
+    log.info(`开始安装插件: ${plugin.name}`);
+    
+    // 创建插件目录（不再区分群聊插件或群聊+私聊插件）
+    const pluginDir = path.join(app.getPath('userData'), 'plugins', plugin.name);
+    
+    // 确保插件目录存在
+    if (!fs.existsSync(pluginDir)) {
+      fs.mkdirSync(pluginDir, { recursive: true });
+      log.info(`创建插件目录: ${pluginDir}`);
+    }
+    
+    // 下载所有插件文件
+    for (const file of plugin.files) {
+      try {
+        await downloadFile(file.download_url, path.join(pluginDir, file.name));
+        log.info(`下载文件成功: ${file.name}`);
+      } catch (err) {
+        log.error(`下载文件失败: ${file.name}`, err);
+        throw new Error(`下载文件 ${file.name} 失败: ${err.message}`);
+      }
+    }
+    
+    // 更新插件状态
+    reloadPlugins();
+    
+    log.info(`插件安装成功: ${plugin.name}`);
+    return { success: true, message: '插件安装成功' };
+  } catch (error) {
+    log.error(`安装插件失败: ${plugin.name}`, error);
+    return { success: false, message: `安装失败: ${error.message}` };
+  }
+}
+
+async function downloadPlugin(eventReply, plugin) {
+  try {
+    log.info(`开始下载插件: ${plugin.name}`);
+    eventReply({ status: 'downloading', message: '正在下载插件...' });
+    
+    // 创建插件目录
+    const pluginDir = path.join(app.getPath('userData'), 'plugins', plugin.name);
+    
+    // 确保插件目录存在
+    if (!fs.existsSync(pluginDir)) {
+      fs.mkdirSync(pluginDir, { recursive: true });
+    }
+    
+    // 下载所有插件文件
+    for (const file of plugin.files) {
+      try {
+        const filePath = path.join(pluginDir, file.name);
+        await downloadFile(file.download_url, filePath);
+        log.info(`下载文件成功: ${file.name}`);
+        eventReply({ status: 'progress', file: file.name, message: `下载文件: ${file.name}` });
+      } catch (err) {
+        log.error(`下载文件失败: ${file.name}`, err);
+        eventReply({ status: 'error', file: file.name, message: `下载文件失败: ${file.name}` });
+        throw err;
+      }
+    }
+    
+    // 重新加载插件
+    reloadPlugins();
+    
+    eventReply({ status: 'success', message: '插件安装成功' });
+    log.info(`插件下载成功: ${plugin.name}`);
+    return true;
+  } catch (error) {
+    log.error(`下载插件失败: ${plugin.name}`, error);
+    eventReply({ status: 'error', message: `下载插件失败: ${error.message}` });
+    return false;
+  }
+}
+
+// 下载单个文件的函数
+async function downloadSingleFile(eventReply, downloadUrl, fileName, pluginName) {
+  try {
+    log.info(`开始下载文件: ${fileName} 到插件 ${pluginName}`);
+    eventReply({ status: 'downloading', message: `正在下载文件 ${fileName}...` });
+    
+    // 创建插件目录
+    const pluginDir = path.join(app.getPath('userData'), 'plugins', pluginName);
+    
+    // 确保插件目录存在
+    if (!fs.existsSync(pluginDir)) {
+      fs.mkdirSync(pluginDir, { recursive: true });
+    }
+    
+    // 下载文件
+    const filePath = path.join(pluginDir, fileName);
+    await downloadFile(downloadUrl, filePath);
+    
+    // 重新加载插件
+    reloadPlugins();
+    
+    log.info(`文件下载成功: ${fileName}`);
+    eventReply({ status: 'success', message: `文件 ${fileName} 下载成功` });
+    return true;
+  } catch (error) {
+    log.error(`下载文件失败: ${fileName}`, error);
+    eventReply({ status: 'error', message: `下载失败: ${error.message}` });
+    return false;
+  }
+}
+
+// 重新加载所有插件
+function reloadPlugins() {
+  try {
+    // 重新初始化插件对象
+    plugins = {
+      chat: {},
+      system: {},
+      tool: {}
+    };
+    
+    const pluginsDir = path.join(app.getPath('userData'), 'plugins');
+    if (!fs.existsSync(pluginsDir)) {
+      fs.mkdirSync(pluginsDir, { recursive: true });
+      log.info('创建插件目录', pluginsDir);
+      return;
+    }
+    
+    // 读取插件主目录中的所有文件夹
+    const pluginFolders = fs.readdirSync(pluginsDir, { withFileTypes: true })
+      .filter(dirent => dirent.isDirectory())
+      .map(dirent => dirent.name);
+    
+    log.info(`发现插件文件夹: ${pluginFolders.join(', ')}`);
+    
+    for (const folder of pluginFolders) {
+      const pluginDir = path.join(pluginsDir, folder);
+      
+      try {
+        // 读取插件信息文件
+        const infoPath = path.join(pluginDir, 'info.json');
+        if (!fs.existsSync(infoPath)) {
+          log.warn(`插件 ${folder} 缺少 info.json 文件`);
+          continue;
+        }
+        
+        const pluginInfo = JSON.parse(fs.readFileSync(infoPath, 'utf8'));
+        
+        // 检查必要的字段
+        if (!pluginInfo.name || !pluginInfo.type) {
+          log.warn(`插件 ${folder} 的 info.json 缺少必要字段`);
+          continue;
+        }
+        
+        const pluginType = pluginInfo.type.toLowerCase();
+        
+        // 检查插件类型是否有效
+        if (!['chat', 'system', 'tool'].includes(pluginType)) {
+          log.warn(`插件 ${folder} 类型无效: ${pluginType}`);
+          continue;
+        }
+        
+        // 读取插件主文件
+        const mainJsPath = path.join(pluginDir, 'index.js');
+        if (!fs.existsSync(mainJsPath)) {
+          log.warn(`插件 ${folder} 缺少主文件 index.js`);
+          continue;
+        }
+        
+        // 读取插件代码
+        const pluginCode = fs.readFileSync(mainJsPath, 'utf8');
+        
+        // 创建插件对象
+        const plugin = {
+          name: pluginInfo.name,
+          path: pluginDir,
+          info: pluginInfo,
+          code: pluginCode,
+          active: true,
+          isInstalled: true
+        };
+        
+        // 根据类型存储插件
+        plugins[pluginType][plugin.name] = plugin;
+        log.info(`加载插件成功: ${plugin.name} (${pluginType})`);
+      } catch (error) {
+        log.error(`加载插件 ${folder} 失败:`, error);
+      }
+    }
+    
+    log.info('插件加载完成');
+    
+    // 发送插件列表到渲染进程
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('plugins-loaded', plugins);
+    }
+  } catch (error) {
+    log.error('加载插件失败:', error);
+  }
+}
+
+// 获取已安装的插件列表
+function getInstalledPlugins() {
+  const result = [];
+  
+  // 合并所有类型的插件
+  Object.values(plugins).forEach(typePlugins => {
+    Object.values(typePlugins).forEach(plugin => {
+      if (plugin.isInstalled) {
+        result.push({
+          name: plugin.name,
+          type: plugin.info.type,
+          version: plugin.info.version || '1.0.0',
+          author: plugin.info.author || '未知',
+          description: plugin.info.description || '',
+          isInstalled: true,
+          path: plugin.path
+        });
+      }
+    });
+  });
+  
+  return result;
+}
+
+/**
+ * 执行指定的插件
+ * @param {string} pluginName - 插件名称
+ * @param {string} pluginType - 插件类型（chat、system或tool）
+ * @param {Object} params - 传递给插件的参数
+ * @returns {Object} - 包含执行结果的对象
+ */
+function executePlugin(pluginName, pluginType, params = {}) {
+  try {
+    // 验证插件类型
+    if (!['chat', 'system', 'tool'].includes(pluginType)) {
+      return {
+        success: false,
+        message: `无效的插件类型：${pluginType}`
+      };
+    }
+
+    // 获取插件路径
+    const userDataPath = app.getPath('userData');
+    const pluginPath = path.join(userDataPath, 'plugins', pluginType, pluginName);
+
+    // 检查插件是否存在
+    if (!fs.existsSync(pluginPath)) {
+      return {
+        success: false,
+        message: `插件${pluginName}不存在`
+      };
+    }
+
+    // 读取插件信息
+    const infoPath = path.join(pluginPath, 'info.json');
+    if (!fs.existsSync(infoPath)) {
+      return {
+        success: false,
+        message: `插件${pluginName}缺少info.json文件`
+      };
+    }
+
+    const infoData = fs.readFileSync(infoPath, 'utf8');
+    const info = JSON.parse(infoData);
+
+    // 检查插件是否已激活
+    if (info.active === false) {
+      return {
+        success: false,
+        message: `插件${pluginName}未激活`
+      };
+    }
+
+    // 插件主文件路径
+    const pluginIndexPath = path.join(pluginPath, 'index.js');
+    if (!fs.existsSync(pluginIndexPath)) {
+      return {
+        success: false,
+        message: `插件${pluginName}缺少index.js文件`
+      };
+    }
+
+    // 创建插件沙箱环境
+    const vm = require('vm');
+    const sandbox = {
+      require: (module) => {
+        // 限制只能访问部分模块
+        const allowedModules = ['fs', 'path', 'os', 'child_process', 'electron'];
+        if (allowedModules.includes(module)) {
+          return require(module);
+        } else if (module.startsWith('./') || module.startsWith('../')) {
+          // 允许相对路径引用插件自身的模块
+          try {
+            const modulePath = path.resolve(pluginPath, module);
+            return require(modulePath);
+          } catch (error) {
+            log.error(`插件${pluginName}加载模块失败:`, error);
+            throw new Error(`加载模块失败: ${error.message}`);
+          }
+        } else {
+          throw new Error(`不允许访问模块: ${module}`);
+        }
+      },
+      console: {
+        log: (...args) => {
+          log.info(`[Plugin:${pluginName}]`, ...args);
+        },
+        error: (...args) => {
+          log.error(`[Plugin:${pluginName}]`, ...args);
+        },
+        warn: (...args) => {
+          log.warn(`[Plugin:${pluginName}]`, ...args);
+        }
+      },
+      params: params,
+      mainWindow: mainWindow
+    };
+
+    // 读取并执行插件代码
+    const pluginCode = fs.readFileSync(pluginIndexPath, 'utf8');
+    const script = new vm.Script(pluginCode);
+    const context = vm.createContext(sandbox);
+    const result = script.runInContext(context);
+
+    log.info(`插件${pluginName}执行成功`);
+    
+    return {
+      success: true,
+      message: `插件${pluginName}执行成功`,
+      data: result
+    };
+  } catch (error) {
+    log.error(`执行插件${pluginName}失败:`, error);
+    return {
+      success: false,
+      message: `执行插件失败: ${error.message}`
+    };
+  }
+}
+
+// 激活或停用插件
+function togglePlugin(pluginName, pluginType, active) {
+  try {
+    if (!plugins[pluginType] || !plugins[pluginType][pluginName]) {
+      log.warn(`尝试切换不存在的插件状态: ${pluginName} (${pluginType})`);
+      return {
+        success: false,
+        message: `插件 ${pluginName} 不存在或类型不匹配`
+      };
+    }
+
+    plugins[pluginType][pluginName].active = active;
+    log.info(`插件 ${pluginName} ${active ? '已激活' : '已停用'}`);
+    
+    // 通知渲染进程插件状态变更
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('plugin-toggle', { name: pluginName, type: pluginType, active });
+    }
+    
+    return {
+      success: true,
+      message: `插件 ${pluginName} ${active ? '激活' : '停用'}成功`
+    };
+  } catch (error) {
+    log.error(`切换插件 ${pluginName} 状态失败:`, error);
+    return {
+      success: false,
+      message: `切换插件状态失败: ${error.message}`
+    };
+  }
+}
+
+// 删除插件
+function uninstallPlugin(pluginName, pluginType) {
+  try {
+    if (!plugins[pluginType] || !plugins[pluginType][pluginName]) {
+      log.warn(`尝试删除不存在的插件: ${pluginName} (${pluginType})`);
+      return {
+        success: false,
+        message: `插件 ${pluginName} 不存在或类型不匹配`
+      };
+    }
+
+    const plugin = plugins[pluginType][pluginName];
+    const pluginDir = plugin.path;
+
+    // 递归删除目录
+    function deleteFolderRecursive(folderPath) {
+      if (fs.existsSync(folderPath)) {
+        fs.readdirSync(folderPath).forEach((file) => {
+          const curPath = path.join(folderPath, file);
+          if (fs.lstatSync(curPath).isDirectory()) {
+            deleteFolderRecursive(curPath);
+          } else {
+            fs.unlinkSync(curPath);
+          }
+        });
+        fs.rmdirSync(folderPath);
+      }
+    }
+
+    // 删除插件目录
+    deleteFolderRecursive(pluginDir);
+    
+    // 从内存中移除插件
+    delete plugins[pluginType][pluginName];
+    
+    log.info(`插件 ${pluginName} 已卸载`);
+    
+    // 通知渲染进程插件已删除
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('plugin-uninstalled', { name: pluginName, type: pluginType });
+    }
+    
+    return {
+      success: true,
+      message: `插件 ${pluginName} 卸载成功`
+    };
+  } catch (error) {
+    log.error(`卸载插件 ${pluginName} 失败:`, error);
+    return {
+      success: false,
+      message: `卸载插件失败: ${error.message}`
+    };
+  }
+}
+
+// 设置IPC通信处理插件管理
+function setupPluginIPC() {
+  // 获取已安装的插件列表
+  ipcMain.handle('get-installed-plugins', () => {
+    return getInstalledPlugins();
+  });
+
+  // 重新加载所有插件
+  ipcMain.handle('reload-plugins', () => {
+    return reloadPlugins();
+  });
+
+  // 执行指定插件
+  ipcMain.handle('execute-plugin', (event, { pluginName, pluginType, params }) => {
+    return executePlugin(pluginName, pluginType, params);
+  });
+
+  // 激活或停用插件
+  ipcMain.handle('toggle-plugin', (event, { pluginName, pluginType, active }) => {
+    return togglePlugin(pluginName, pluginType, active);
+  });
+
+  // 卸载插件
+  ipcMain.handle('uninstall-plugin', (event, { pluginName, pluginType }) => {
+    return uninstallPlugin(pluginName, pluginType);
+  });
+
+  // 安装新插件
+  ipcMain.handle('install-plugin', async (event, { pluginZipPath }) => {
+    try {
+      const AdmZip = require('adm-zip');
+      const temp = require('temp').track(); // 自动清理临时文件
+      const fs = require('fs');
+      const path = require('path');
+
+      // 验证文件存在
+      if (!fs.existsSync(pluginZipPath)) {
+        return {
+          success: false,
+          message: '插件安装包不存在'
+        };
+      }
+
+      // 解压到临时目录
+      const zip = new AdmZip(pluginZipPath);
+      const tempDir = temp.mkdirSync('plugin-install-');
+      zip.extractAllTo(tempDir, true);
+
+      // 验证插件结构
+      const infoPath = path.join(tempDir, 'info.json');
+      if (!fs.existsSync(infoPath)) {
+        return {
+          success: false,
+          message: '插件格式不正确：缺少info.json文件'
+        };
+      }
+
+      // 读取插件信息
+      const infoData = fs.readFileSync(infoPath, 'utf8');
+      const info = JSON.parse(infoData);
+
+      // 验证插件信息
+      if (!info.name || !info.type) {
+        return {
+          success: false,
+          message: '插件信息不完整：缺少name或type字段'
+        };
+      }
+
+      // 验证插件类型
+      if (!['chat', 'system', 'tool'].includes(info.type)) {
+        return {
+          success: false,
+          message: '插件类型无效：必须是chat, system或tool'
+        };
+      }
+
+      // 验证主文件
+      const indexPath = path.join(tempDir, 'index.js');
+      if (!fs.existsSync(indexPath)) {
+        return {
+          success: false,
+          message: '插件格式不正确：缺少index.js文件'
+        };
+      }
+
+      // 目标目录
+      const pluginsDir = path.join(app.getPath('userData'), 'plugins');
+      if (!fs.existsSync(pluginsDir)) {
+        fs.mkdirSync(pluginsDir);
+      }
+
+      const pluginTypeDir = path.join(pluginsDir, info.type);
+      if (!fs.existsSync(pluginTypeDir)) {
+        fs.mkdirSync(pluginTypeDir);
+      }
+
+      const pluginDir = path.join(pluginTypeDir, info.name);
+      
+      // 如果插件已存在，先删除
+      if (fs.existsSync(pluginDir)) {
+        // 递归删除目录
+        function deleteFolderRecursive(folderPath) {
+          if (fs.existsSync(folderPath)) {
+            fs.readdirSync(folderPath).forEach((file) => {
+              const curPath = path.join(folderPath, file);
+              if (fs.lstatSync(curPath).isDirectory()) {
+                deleteFolderRecursive(curPath);
+              } else {
+                fs.unlinkSync(curPath);
+              }
+            });
+            fs.rmdirSync(folderPath);
+          }
+        }
+        deleteFolderRecursive(pluginDir);
+      }
+
+      // 创建插件目录
+      fs.mkdirSync(pluginDir);
+
+      // 复制插件文件
+      function copyFolderRecursive(source, target) {
+        if (!fs.existsSync(target)) {
+          fs.mkdirSync(target);
+        }
+
+        if (fs.lstatSync(source).isDirectory()) {
+          const files = fs.readdirSync(source);
+          files.forEach((file) => {
+            const curSource = path.join(source, file);
+            const curTarget = path.join(target, file);
+            if (fs.lstatSync(curSource).isDirectory()) {
+              copyFolderRecursive(curSource, curTarget);
+            } else {
+              fs.copyFileSync(curSource, curTarget);
+            }
+          });
+        }
+      }
+
+      copyFolderRecursive(tempDir, pluginDir);
+
+      // 重新加载插件
+      reloadPlugins();
+
+      return {
+        success: true,
+        message: `插件 ${info.name} 安装成功`
+      };
+    } catch (error) {
+      log.error('安装插件失败:', error);
+      return {
+        success: false,
+        message: `安装插件失败: ${error.message}`
+      };
+    }
+  });
+} 

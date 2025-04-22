@@ -80,4 +80,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getPluginStore: async () => await ipcRenderer.invoke('get-plugin-store'),
   installPlugin: async (pluginInfo) => await ipcRenderer.invoke('install-plugin', pluginInfo),
   checkPluginInstalled: async (pluginInfo) => await ipcRenderer.invoke('check-plugin-installed', pluginInfo),
+  // 下载单个插件文件
+  downloadSingleFile: async (fileInfo) => await ipcRenderer.invoke('download-single-file', fileInfo),
 }); 

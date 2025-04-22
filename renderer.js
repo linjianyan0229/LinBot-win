@@ -1365,6 +1365,11 @@ async function fetchPluginStore() {
             storePlugins = response.plugins;
             storeStatus.textContent = `插件商店共有 ${response.count} 个插件，获取时间: ${new Date().toLocaleString()}`;
             storeStatus.className = 'status-bar running';
+            
+            // 更新类型筛选下拉框
+            updatePluginTypeFilter(storePlugins);
+            
+            // 渲染插件列表
             renderPluginStore(storePlugins);
         } else {
             storeStatus.textContent = `获取插件商店数据失败: ${response.error || '未知错误'}`;
@@ -1385,159 +1390,266 @@ async function fetchPluginStore() {
     }
 }
 
-// 渲染插件商店列表
-async function renderPluginStore(plugins) {
-    if (!storePluginsContainer) return;
+// 更新插件类型筛选下拉框
+function updatePluginTypeFilter(plugins) {
+    const typeFilter = document.getElementById('pluginTypeFilter');
+    typeFilter.innerHTML = '<option value="all">全部插件</option>';
     
-    // 显示当前代理设置
-    const proxyInfo = document.createElement('div');
-    proxyInfo.className = 'proxy-info';
-    proxyInfo.style.marginBottom = '15px';
-    proxyInfo.style.fontSize = '0.9em';
-    proxyInfo.style.color = 'var(--text-light)';
-    
-    // 由于无法在渲染进程中直接访问process.env，我们需要获取代理信息
-    try {
-        // 假设代理信息来自后端，这里先简化处理
-        const httpProxy = null; // 修改为从主进程获取
-        
-        if (httpProxy) {
-            proxyInfo.innerHTML = `
-                <span style="color: var(--success-color);">✓</span> 
-                当前使用代理: <code>${httpProxy}</code>
-            `;
-        } else {
-            proxyInfo.innerHTML = `
-                <span style="color: var(--warning-color);">⚠</span> 
-                未检测到HTTP代理设置。如果无法下载插件，请考虑设置代理。
-                <button id="setupProxyBtn" class="action-btn" style="padding: 2px 8px; font-size: 0.9em; margin-left: 10px;">设置代理</button>
-            `;
+    // 获取所有唯一的插件类型
+    const allTypes = new Set();
+    plugins.forEach(plugin => {
+        if (plugin.type) {
+            allTypes.add(plugin.type);
         }
-    } catch (error) {
-        console.error("获取代理信息失败:", error);
-        proxyInfo.innerHTML = `
-            <span style="color: var(--warning-color);">⚠</span> 
-            无法获取代理设置。如果无法下载插件，请考虑设置代理。
-            <button id="setupProxyBtn" class="action-btn" style="padding: 2px 8px; font-size: 0.9em; margin-left: 10px;">设置代理</button>
-        `;
-    }
-    
-    // 清空容器但保留代理信息
-    storePluginsContainer.innerHTML = '';
-    storePluginsContainer.appendChild(proxyInfo);
-    
-    // 绑定设置代理按钮事件
-    const setupProxyBtn = document.getElementById('setupProxyBtn');
-    if (setupProxyBtn) {
-        setupProxyBtn.addEventListener('click', setupProxy);
-    }
-    
-    // 确保插件数据存在
-    if (!plugins || !Array.isArray(plugins) || plugins.length === 0) {
-        const emptyMessage = document.createElement('div');
-        emptyMessage.className = 'plugin-empty';
-        emptyMessage.textContent = '没有找到任何插件';
-        storePluginsContainer.appendChild(emptyMessage);
-        return;
-    }
-    
-    console.log("开始渲染插件列表，共有插件:", plugins.length);
-    
-    // 应用搜索和过滤
-    const searchTerm = pluginSearchInput ? pluginSearchInput.value.trim().toLowerCase() : '';
-    const typeFilter = pluginTypeFilter ? pluginTypeFilter.value : 'all';
-    
-    // 过滤插件
-    const filteredPlugins = plugins.filter(plugin => {
-        // 名称和描述搜索
-        const matchesSearch = 
-            !searchTerm || 
-            plugin.name.toLowerCase().includes(searchTerm) || 
-            plugin.description.toLowerCase().includes(searchTerm);
-        
-        // 类型过滤
-        const matchesType = typeFilter === 'all' || plugin.type === typeFilter;
-        
-        return matchesSearch && matchesType;
     });
     
-    console.log("过滤后的插件数量:", filteredPlugins.length);
+    // 添加每个类型到筛选器中
+    Array.from(allTypes).sort().forEach(type => {
+        const opt = document.createElement('option');
+        opt.value = type;
+        opt.textContent = type;
+        typeFilter.appendChild(opt);
+    });
+}
+
+// 渲染插件商店列表
+async function renderPluginStore(plugins) {
+    const container = document.getElementById('storePluginsContainer');
+    container.innerHTML = '';
     
+    // 获取当前的过滤条件
+    const typeFilter = document.getElementById('pluginTypeFilter').value;
+    const searchTerm = document.getElementById('pluginSearchInput').value.toLowerCase();
+    
+    // 过滤插件
+    let filteredPlugins = plugins;
+    
+    // 根据类型过滤
+    if (typeFilter !== 'all') {
+        filteredPlugins = filteredPlugins.filter(plugin => plugin.type === typeFilter);
+    }
+    
+    // 根据搜索词过滤
+    if (searchTerm) {
+        filteredPlugins = filteredPlugins.filter(plugin => 
+            plugin.name.toLowerCase().includes(searchTerm) || 
+            plugin.description.toLowerCase().includes(searchTerm)
+        );
+    }
+    
+    // 如果没有插件，显示提示信息
     if (filteredPlugins.length === 0) {
-        const emptyMessage = document.createElement('div');
-        emptyMessage.className = 'plugin-empty';
-        emptyMessage.textContent = '没有找到符合条件的插件';
-        storePluginsContainer.appendChild(emptyMessage);
+        container.innerHTML = '<div class="plugin-empty">没有找到符合条件的插件</div>';
         return;
     }
     
-    // 渲染每个插件
-    for (const plugin of filteredPlugins) {
-        try {
+    // 按类型对插件进行分组
+    const pluginsByType = {};
+    filteredPlugins.forEach(plugin => {
+        const type = plugin.type || '未分类';
+        if (!pluginsByType[type]) {
+            pluginsByType[type] = [];
+        }
+        pluginsByType[type].push(plugin);
+    });
+    
+    // 遍历每个类型，创建分组
+    for (const [type, typePlugins] of Object.entries(pluginsByType)) {
+        const groupDiv = document.createElement('div');
+        groupDiv.className = 'plugin-group';
+        
+        // 创建组标题
+        const groupHeader = document.createElement('div');
+        groupHeader.className = 'plugin-group-header';
+        groupHeader.innerHTML = `
+            <h4 class="plugin-group-name">
+                ${type}
+                <span class="plugin-group-badge">${typePlugins.length}个插件</span>
+            </h4>
+        `;
+        groupDiv.appendChild(groupHeader);
+        
+        // 添加每个插件
+        typePlugins.forEach(plugin => {
             // 检查插件是否已安装
-            const installStatus = await window.electronAPI.checkPluginInstalled(plugin);
+            const isInstalled = window.pluginStatus?.plugins?.some(p => 
+                p.name === plugin.name && p.type === plugin.type
+            );
             
-            const pluginElement = document.createElement('div');
-            pluginElement.className = 'plugin-store-item';
-            pluginElement.setAttribute('data-plugin-name', plugin.name);
-            pluginElement.setAttribute('data-plugin-type', plugin.type);
+            // 创建插件项
+            const pluginItem = document.createElement('div');
+            pluginItem.className = 'plugin-store-item';
             
-            // 创建插件信息部分
-            const infoElement = document.createElement('div');
-            infoElement.className = 'plugin-store-info';
+            // 创建插件信息区
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'plugin-store-info';
             
-            // 插件名称和类型标签
-            infoElement.innerHTML = `
-                <h4 class="plugin-store-name">
-                    ${plugin.name}
-                    <span class="plugin-type-badge">${plugin.type}</span>
-                </h4>
-                <p class="plugin-store-description">${plugin.description}</p>
-                <div class="plugin-store-meta">
-                    <span>
-                        <svg viewBox="0 0 16 16" fill="currentColor">
-                            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
-                        </svg>
-                        ${plugin.files ? plugin.files.length : 0}个文件
-                    </span>
-                </div>
-            `;
+            // 插件名称和徽章
+            const nameContainer = document.createElement('div');
+            nameContainer.style.display = 'flex';
+            nameContainer.style.alignItems = 'center';
             
-            // 创建操作按钮部分
-            const actionsElement = document.createElement('div');
-            actionsElement.className = 'plugin-store-actions';
+            const nameHeading = document.createElement('h4');
+            nameHeading.className = 'plugin-store-name';
+            nameHeading.textContent = plugin.name;
+            nameContainer.appendChild(nameHeading);
             
-            if (installStatus.installed) {
-                // 已安装标签
+            // 添加文件计数徽章和切换按钮
+            if (plugin.files && plugin.files.length > 0) {
+                const filesBadge = document.createElement('span');
+                filesBadge.className = 'plugin-files-badge';
+                filesBadge.textContent = `${plugin.files.length}个文件`;
+                nameContainer.appendChild(filesBadge);
+                
+                const toggleBtn = document.createElement('button');
+                toggleBtn.className = 'toggle-files-btn';
+                toggleBtn.innerHTML = '<span class="toggle-icon">▼</span>';
+                toggleBtn.title = '显示/隐藏文件列表';
+                toggleBtn.setAttribute('aria-label', '显示/隐藏文件列表');
+                nameContainer.appendChild(toggleBtn);
+            }
+            
+            infoDiv.appendChild(nameContainer);
+            
+            // 插件描述
+            const descP = document.createElement('p');
+            descP.className = 'plugin-store-description';
+            descP.textContent = plugin.description || '无描述信息';
+            infoDiv.appendChild(descP);
+            
+            // 创建插件操作区
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'plugin-store-actions';
+            
+            if (isInstalled) {
                 const installedBadge = document.createElement('span');
                 installedBadge.className = 'installed-badge';
                 installedBadge.textContent = '已安装';
-                actionsElement.appendChild(installedBadge);
-                
-                // 重新安装按钮
-                const reinstallBtn = document.createElement('button');
-                reinstallBtn.className = 'action-btn edit-btn';
-                reinstallBtn.textContent = '重新安装';
-                reinstallBtn.addEventListener('click', () => installPluginFromStore(plugin));
-                actionsElement.appendChild(reinstallBtn);
+                actionsDiv.appendChild(installedBadge);
             } else {
-                // 安装按钮
                 const installBtn = document.createElement('button');
-                installBtn.className = 'action-btn install-btn';
+                installBtn.className = 'install-btn';
                 installBtn.textContent = '安装';
-                installBtn.addEventListener('click', () => installPluginFromStore(plugin));
-                actionsElement.appendChild(installBtn);
+                installBtn.setAttribute('data-plugin-path', plugin.path);
+                installBtn.setAttribute('data-plugin-name', plugin.name);
+                installBtn.setAttribute('data-plugin-type', plugin.type);
+                actionsDiv.appendChild(installBtn);
+                
+                // 添加安装按钮事件监听器
+                installBtn.addEventListener('click', async (e) => {
+                    e.target.disabled = true;
+                    e.target.textContent = '安装中...';
+                    
+                    try {
+                        await installPluginFromStore(plugin);
+                        e.target.textContent = '已安装';
+                        e.target.disabled = true;
+                    } catch (err) {
+                        console.error('安装插件失败:', err);
+                        e.target.textContent = '安装失败';
+                        setTimeout(() => {
+                            e.target.disabled = false;
+                            e.target.textContent = '安装';
+                        }, 3000);
+                    }
+                });
             }
             
-            // 组合插件元素
-            pluginElement.appendChild(infoElement);
-            pluginElement.appendChild(actionsElement);
+            // 组装插件项
+            pluginItem.appendChild(infoDiv);
+            pluginItem.appendChild(actionsDiv);
+            groupDiv.appendChild(pluginItem);
             
-            // 添加到容器
-            storePluginsContainer.appendChild(pluginElement);
-        } catch (error) {
-            console.error(`渲染插件 ${plugin.name} 时出错:`, error);
-        }
+            // 添加文件列表（默认隐藏）
+            if (plugin.files && plugin.files.length > 0) {
+                const filesListDiv = document.createElement('div');
+                filesListDiv.className = 'plugin-files-list';
+                filesListDiv.style.display = 'none'; // 默认隐藏
+                
+                const filesList = document.createElement('ul');
+                filesList.className = 'files-list';
+                
+                // 添加每个文件
+                plugin.files.forEach(fileInfo => {
+                    const fileItem = document.createElement('li');
+                    fileItem.className = 'file-item';
+                    
+                    const fileName = document.createElement('span');
+                    fileName.className = 'file-name';
+                    fileName.textContent = fileInfo.name;
+                    fileItem.appendChild(fileName);
+                    
+                    const fileActions = document.createElement('div');
+                    fileActions.className = 'file-actions';
+                    
+                    const downloadBtn = document.createElement('button');
+                    downloadBtn.className = 'download-file-btn';
+                    downloadBtn.innerHTML = `
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                            <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"></path>
+                        </svg>
+                        下载
+                    `;
+                    downloadBtn.setAttribute('data-download-url', fileInfo.download_url);
+                    downloadBtn.setAttribute('data-file-name', fileInfo.name);
+                    
+                    downloadBtn.addEventListener('click', async (e) => {
+                        // 调用下载单个文件的函数
+                        const btn = e.currentTarget;
+                        const downloadUrl = btn.getAttribute('data-download-url');
+                        const fileName = btn.getAttribute('data-file-name');
+                        
+                        // 保存原始按钮内容
+                        const originalContent = btn.innerHTML;
+                        
+                        // 显示加载状态
+                        btn.innerHTML = '<div class="loading-spinner"></div>下载中...';
+                        btn.disabled = true;
+                        
+                        try {
+                            await downloadSingleFile(downloadUrl, fileName, plugin.name, plugin.type);
+                            // 下载成功
+                            btn.innerHTML = '✓ 成功';
+                            btn.style.backgroundColor = 'var(--success-color)';
+                        } catch (err) {
+                            // 下载失败
+                            console.error('下载文件失败:', err);
+                            btn.innerHTML = '✗ 失败';
+                            btn.style.backgroundColor = 'var(--danger-color)';
+                        }
+                        
+                        // 恢复按钮状态
+                        setTimeout(() => {
+                            btn.innerHTML = originalContent;
+                            btn.disabled = false;
+                            btn.style.backgroundColor = '';
+                        }, 3000);
+                    });
+                    
+                    fileActions.appendChild(downloadBtn);
+                    fileItem.appendChild(fileActions);
+                    filesList.appendChild(fileItem);
+                });
+                
+                filesListDiv.appendChild(filesList);
+                groupDiv.appendChild(filesListDiv);
+                
+                // 添加点击切换文件列表显示/隐藏的事件
+                const toggleBtn = nameContainer.querySelector('.toggle-files-btn');
+                toggleBtn.addEventListener('click', () => {
+                    const icon = toggleBtn.querySelector('.toggle-icon');
+                    if (filesListDiv.style.display === 'none') {
+                        filesListDiv.style.display = 'block';
+                        icon.style.transform = 'rotate(180deg)';
+                    } else {
+                        filesListDiv.style.display = 'none';
+                        icon.style.transform = 'rotate(0deg)';
+                    }
+                });
+            }
+        });
+        
+        container.appendChild(groupDiv);
     }
 }
 
@@ -1889,4 +2001,75 @@ if (batchDeleteBtn) {
 const selectAllGroups = document.getElementById('selectAllGroups');
 if (selectAllGroups) {
     selectAllGroups.addEventListener('change', toggleSelectAllGroups);
+}
+
+// 下载单个插件文件
+async function downloadSingleFile(downloadUrl, fileName, pluginName, pluginType) {
+    try {
+        // 显示下载状态
+        const downloadBtn = document.querySelector(`.download-file-btn[data-file-name="${fileName}"]`);
+        if (downloadBtn) {
+            const originalText = downloadBtn.innerHTML;
+            downloadBtn.innerHTML = '<div class="loading-spinner" style="margin: 0;"></div> 下载中...';
+            downloadBtn.disabled = true;
+            
+            // 调用后端API下载文件
+            const result = await window.electronAPI.downloadSingleFile({
+                download_url: downloadUrl,
+                name: fileName,
+                plugin_name: pluginName,
+                plugin_type: pluginType,
+                preserveStructure: false // 默认不保持原有目录结构，直接保存到插件类型目录下
+            });
+            
+            // 处理下载结果
+            if (result.success) {
+                downloadBtn.innerHTML = '✓ 已下载';
+                downloadBtn.style.backgroundColor = 'var(--success-color)';
+                
+                // 3秒后恢复原状
+                setTimeout(() => {
+                    downloadBtn.innerHTML = originalText;
+                    downloadBtn.style.backgroundColor = '';
+                    downloadBtn.disabled = false;
+                }, 3000);
+                
+                addServerLog(`文件 ${fileName} 下载成功`, 'info');
+            } else {
+                downloadBtn.innerHTML = '✗ 下载失败';
+                downloadBtn.style.backgroundColor = 'var(--danger-color)';
+                
+                // 3秒后恢复原状
+                setTimeout(() => {
+                    downloadBtn.innerHTML = originalText;
+                    downloadBtn.style.backgroundColor = '';
+                    downloadBtn.disabled = false;
+                }, 3000);
+                
+                addServerLog(`文件 ${fileName} 下载失败: ${result.error}`, 'error');
+            }
+        }
+    } catch (error) {
+        console.error(`下载文件 ${fileName} 时出错:`, error);
+        addServerLog(`下载文件 ${fileName} 时出错: ${error.message}`, 'error');
+        
+        // 恢复按钮状态
+        const downloadBtn = document.querySelector(`.download-file-btn[data-file-name="${fileName}"]`);
+        if (downloadBtn) {
+            downloadBtn.innerHTML = '✗ 下载失败';
+            downloadBtn.style.backgroundColor = 'var(--danger-color)';
+            
+            // 3秒后恢复原状
+            setTimeout(() => {
+                downloadBtn.innerHTML = `
+                    <svg viewBox="0 0 24 24" style="width: 16px; height: 16px;">
+                        <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"></path>
+                    </svg>
+                    下载
+                `;
+                downloadBtn.style.backgroundColor = '';
+                downloadBtn.disabled = false;
+            }, 3000);
+        }
+    }
 }

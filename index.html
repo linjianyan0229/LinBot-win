@@ -745,6 +745,104 @@
             margin-left: 8px;
         }
         
+        .plugin-files-badge {
+            background-color: var(--light-color);
+            color: var(--text-color);
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: normal;
+            margin-left: 8px;
+        }
+        
+        .toggle-files-btn {
+            background: none;
+            border: none;
+            color: var(--text-color);
+            padding: 3px;
+            cursor: pointer;
+            vertical-align: middle;
+            margin-left: 5px;
+        }
+        
+        .toggle-files-btn:hover {
+            color: var(--primary-color);
+            transform: none;
+        }
+        
+        .toggle-icon {
+            transition: transform 0.3s ease;
+            vertical-align: middle;
+        }
+        
+        .plugin-files-list {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: var(--light-color);
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+        
+        .files-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+            margin-bottom: 5px;
+            background-color: #fff;
+            border-radius: 4px;
+        }
+        
+        .file-item:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+        }
+        
+        .file-name {
+            font-family: 'Fira Code', Consolas, monospace;
+            font-size: 0.9em;
+        }
+        
+        .file-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .download-file-btn {
+            background-color: var(--info-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 5px 10px;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: all 0.2s ease;
+        }
+        
+        .download-file-btn:hover {
+            background-color: var(--info-hover);
+            transform: translateY(-1px);
+        }
+        
+        .no-files {
+            text-align: center;
+            color: var(--text-light);
+            font-style: italic;
+            padding: 10px;
+            margin: 0;
+        }
+        
         .loading-spinner {
             display: inline-block;
             width: 20px;
@@ -1017,8 +1115,6 @@
                             <input type="text" id="pluginSearchInput" placeholder="搜索插件..." style="width: 200px; padding: 8px;">
                             <select id="pluginTypeFilter" style="padding: 8px; margin-left: 10px;">
                                 <option value="all">全部插件</option>
-                                <option value="群聊+私聊插件">群聊+私聊插件</option>
-                                <option value="群聊插件">仅群聊插件</option>
                             </select>
                             <button id="refreshStoreBtn" class="action-btn" style="margin-left: 10px;">刷新</button>
                         </div>
