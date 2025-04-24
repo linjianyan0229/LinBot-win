@@ -168,8 +168,14 @@ class PluginManager {
      */
     async handleMessage(message, groupConfig) {
         try {
-            // 检查消息是否为群消息
-            if (message.message_type === 'group') {
+            // 添加更详细的日志记录
+            this.log(`收到事件：post_type=${message.post_type}, ${message.notice_type || message.request_type || message.message_type || ''}, sub_type=${message.sub_type || ''}`);
+            
+            // 检查群组是否启用（仅对群消息和群通知检查）
+            if ((message.post_type === 'message' && message.message_type === 'group') || 
+                (message.post_type === 'notice' && message.group_id) || 
+                (message.post_type === 'request' && message.request_type === 'group')) {
+                
                 const groupId = message.group_id.toString();
                 
                 // 检查群是否启用
@@ -178,33 +184,39 @@ class PluginManager {
                     return false;
                 }
                 
-                this.log(`处理来自群 ${groupId} 的消息`);
-                this.log(`消息内容: ${message.raw_message || (typeof message.message === 'string' ? message.message : JSON.stringify(message.message))}`);
+                if (message.post_type === 'message') {
+                    this.log(`处理来自群 ${groupId} 的消息`);
+                    this.log(`消息内容: ${message.raw_message || (typeof message.message === 'string' ? message.message : JSON.stringify(message.message))}`);
+                } else if (message.post_type === 'notice') {
+                    this.log(`处理来自群 ${groupId} 的通知事件: ${message.notice_type}/${message.sub_type}`);
+                } else if (message.post_type === 'request') {
+                    this.log(`处理来自群 ${groupId} 的请求事件: ${message.request_type}/${message.sub_type}`);
+                }
             }
 
             // 依次调用所有插件的消息处理器
             let handled = false;
             for (const handler of this.messageHandlers) {
                 try {
-                    this.log(`尝试使用下一个插件处理消息...`);
+                    this.log(`尝试使用下一个插件处理事件...`);
                     const result = await handler(message, this.client);
                     if (result) {
-                        this.log(`消息已被处理`);
+                        this.log(`事件已被处理`);
                         handled = true;
                         break; // 如果有插件处理了消息，则停止继续处理
                     }
                 } catch (error) {
-                    this.log(`插件处理消息出错: ${error.message}`, 'error');
+                    this.log(`插件处理事件出错: ${error.message}`, 'error');
                 }
             }
             
             if (!handled) {
-                this.log(`没有插件处理此消息`);
+                this.log(`没有插件处理此事件`);
             }
             
             return handled; // 返回是否处理了消息
         } catch (error) {
-            this.log(`消息处理失败: ${error.message}`, 'error');
+            this.log(`事件处理失败: ${error.message}`, 'error');
             return false;
         }
     }

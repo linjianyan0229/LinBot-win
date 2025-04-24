@@ -744,20 +744,20 @@ function startServer(port, accessToken) {
                 sendToRenderer('server-log', `收到客户端消息: ${message}`);
             }
             
-            // 处理不同类型的消息
-            if (parsedMessage.post_type === 'message') {
+            // 处理不同类型的消息，确保所有消息类型都传给插件管理器
+            if (['message', 'notice', 'request'].includes(parsedMessage.post_type)) {
                 // 发送到渲染进程
                 sendToRenderer('ws-message', parsedMessage);
                 
-                // 让插件管理器处理消息
+                // 让插件管理器处理所有类型的事件
                 if (pluginManager) {
                     try {
                         await pluginManager.handleMessage(parsedMessage, groupConfig);
                     } catch (pluginError) {
-                        sendToRenderer('server-log', `插件处理消息出错: ${pluginError.message}`, 'error');
+                        sendToRenderer('server-log', `插件处理事件出错: ${pluginError.message}`, 'error');
                     }
                 }
-            } 
+            }
             // 检查是否是API响应
             else if (parsedMessage.echo && apiRequests.has(parsedMessage.echo)) {
                 const { resolve, reject, timeoutId } = apiRequests.get(parsedMessage.echo);

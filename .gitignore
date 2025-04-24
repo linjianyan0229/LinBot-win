@@ -4,6 +4,7 @@
 /dist
 /plugins
 /plugins/
+/.cursor
 
 # 日志文件
 npm-debug.log*
